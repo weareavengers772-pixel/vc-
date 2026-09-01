@@ -1,85 +1,522 @@
-```js
 // src/utils/database.js
-// Main database facade
+// Safe database facade
+// Location: src/utils/database.js
 
-import { pgDb } from './postgresDatabase.js';
 import { logger } from './logger.js';
-import { BotConfig, getDefaultApplicationQuestions } from '../config/bot.js';
 
 // ============================================================
-// DATABASE WRAPPER
+// SAFE IMPORTS
 // ============================================================
 
-export {
-    db,
-    initializeDatabase,
-    getFromDb,
-    setInDb,
-    deleteFromDb,
-} from './database/wrapper.js';
+let wrapper = null;
+let keys = null;
+let pgDb = null;
+let BotConfig = {};
+
+let databaseLoaded = false;
+
+// Load database modules without crashing the bot on startup
+async function loadDatabase() {
+    if (databaseLoaded) return;
+
+    databaseLoaded = true;
+
+    try {
+        wrapper = await import('./database/wrapper.js');
+    } catch (error) {
+        logger.error('Could not load database/wrapper.js:', error);
+        wrapper = {};
+    }
+
+    try {
+        keys = await import('./database/keys.js');
+    } catch (error) {
+        logger.error('Could not load database/keys.js:', error);
+        keys = {};
+    }
+
+    try {
+        const postgres = await import('./postgresDatabase.js');
+        pgDb = postgres.pgDb ?? postgres.default ?? null;
+    } catch (error) {
+        logger.warn(
+            'PostgreSQL module could not be loaded. Continuing without PostgreSQL.'
+        );
+        pgDb = null;
+    }
+
+    try {
+        const config = await import('../config/bot.js');
+        BotConfig = config.BotConfig ?? config.default ?? {};
+    } catch (error) {
+        logger.warn(
+            'Bot config could not be loaded. Using defaults.'
+        );
+        BotConfig = {};
+    }
+}
 
 // ============================================================
-// DATABASE KEYS
+// DATABASE
 // ============================================================
 
-export {
-    getGuildConfigKey,
-    getGuildBirthdaysKey,
-    getBirthdayLeftBackupKey,
-    getBirthdayTrackingKey,
+export const db = {
+    get initialized() {
+        return Boolean(wrapper?.db?.initialized);
+    },
 
-    getTicketKey,
-    getTicketCounterKey,
+    get pool() {
+        return wrapper?.db?.pool ?? null;
+    },
 
-    getInviteTrackingKey,
-    getMemberInvitesKey,
-    getInviteUsesKey,
+    async initialize() {
+        await loadDatabase();
 
-    getFakeAccountKey,
+        if (typeof wrapper?.initializeDatabase === 'function') {
+            return wrapper.initializeDatabase();
+        }
 
-    getEconomyKey,
-    getEconomyPrefix,
+        if (typeof wrapper?.db?.initialize === 'function') {
+            return wrapper.db.initialize();
+        }
 
-    getAFKKey,
+        return false;
+    },
 
-    getWelcomeConfigKey,
+    isAvailable() {
+        try {
+            if (typeof wrapper?.db?.isAvailable === 'function') {
+                return wrapper.db.isAvailable();
+            }
 
-    getLevelingKey,
-    getUserLevelKey,
-    getUserLevelPrefix,
+            return false;
+        } catch {
+            return false;
+        }
+    },
 
-    getApplicationRolesKey,
-    getApplicationSettingsKey,
-    getUserApplicationsKey,
-    getApplicationKey,
-    getApplicationsPrefix,
+    isDegraded() {
+        try {
+            if (typeof wrapper?.db?.isDegraded === 'function') {
+                return wrapper.db.isDegraded();
+            }
 
-    getJoinToCreateConfigKey,
-    getJoinToCreateChannelsKey,
+            return false;
+        } catch {
+            return false;
+        }
+    },
 
-    getWarningsKey,
-    getWarningsPrefix,
+    async get(key, fallback = null) {
+        await loadDatabase();
 
-    getUserNotesKey,
-    getUserNotesListKey,
+        try {
+            if (typeof wrapper?.getFromDb === 'function') {
+                return await wrapper.getFromDb(key, fallback);
+            }
 
-    getReactionRoleKey,
-    getReactionRolesPrefix,
+            if (typeof wrapper?.db?.get === 'function') {
+                return await wrapper.db.get(key, fallback);
+            }
 
-    getServerCountersKey,
+            return fallback;
+        } catch (error) {
+            logger.error(`Database GET failed for ${key}:`, error);
+            return fallback;
+        }
+    },
 
-    getGiveawayEntryKey,
-    getGiveawayLockKey,
+    async set(key, value) {
+        await loadDatabase();
 
-    canonicalizeKey,
-    getLegacyVariantsForCanonical,
-} from './database/keys.js';
+        try {
+            if (typeof wrapper?.setInDb === 'function') {
+                return await wrapper.setInDb(key, value);
+            }
+
+            if (typeof wrapper?.db?.set === 'function') {
+                return await wrapper.db.set(key, value);
+            }
+
+            return false;
+        } catch (error) {
+            logger.error(`Database SET failed for ${key}:`, error);
+            return false;
+        }
+    },
+
+    async delete(key) {
+        await loadDatabase();
+
+        try {
+            if (typeof wrapper?.deleteFromDb === 'function') {
+                return await wrapper.deleteFromDb(key);
+            }
+
+            if (typeof wrapper?.db?.delete === 'function') {
+                return await wrapper.db.delete(key);
+            }
+
+            return false;
+        } catch (error) {
+            logger.error(`Database DELETE failed for ${key}:`, error);
+            return false;
+        }
+    },
+
+    async list(prefix = '') {
+        await loadDatabase();
+
+        try {
+            if (typeof wrapper?.db?.list === 'function') {
+                return await wrapper.db.list(prefix);
+            }
+
+            if (typeof wrapper?.listKeys === 'function') {
+                return await wrapper.listKeys(prefix);
+            }
+
+            return [];
+        } catch (error) {
+            logger.error(`Database LIST failed for ${prefix}:`, error);
+            return [];
+        }
+    }
+};
 
 // ============================================================
-// POSTGRES
+// BACKWARD COMPATIBILITY
 // ============================================================
 
-export { pgDb };
+export async function initializeDatabase() {
+    return db.initialize();
+}
+
+export async function getFromDb(key, fallback = null) {
+    return db.get(key, fallback);
+}
+
+export async function setInDb(key, value) {
+    return db.set(key, value);
+}
+
+export async function deleteFromDb(key) {
+    return db.delete(key);
+}
+
+// ============================================================
+// KEY FUNCTIONS
+// ============================================================
+
+function safeKey(name, fallback, args) {
+    try {
+        const fn = keys?.[name];
+
+        if (typeof fn === 'function') {
+            return fn(...args);
+        }
+
+        return fallback(...args);
+    } catch (error) {
+        logger.error(`Database key error (${name}):`, error);
+        return fallback(...args);
+    }
+}
+
+export function getGuildConfigKey(guildId) {
+    return safeKey(
+        'getGuildConfigKey',
+        id => `guild:${id}:config`,
+        [guildId]
+    );
+}
+
+export function getGuildBirthdaysKey(guildId) {
+    return safeKey(
+        'getGuildBirthdaysKey',
+        id => `guild:${id}:birthdays`,
+        [guildId]
+    );
+}
+
+export function getLevelingKey(guildId) {
+    return safeKey(
+        'getLevelingKey',
+        id => `guild:${id}:leveling`,
+        [guildId]
+    );
+}
+
+export function getUserLevelKey(guildId, userId) {
+    return safeKey(
+        'getUserLevelKey',
+        (g, u) => `guild:${g}:level:${u}`,
+        [guildId, userId]
+    );
+}
+
+export function getUserLevelPrefix(guildId) {
+    return safeKey(
+        'getUserLevelPrefix',
+        id => `guild:${id}:level:`,
+        [guildId]
+    );
+}
+
+export function getWelcomeConfigKey(guildId) {
+    return safeKey(
+        'getWelcomeConfigKey',
+        id => `guild:${id}:welcome`,
+        [guildId]
+    );
+}
+
+export function getEconomyKey(guildId, userId) {
+    return safeKey(
+        'getEconomyKey',
+        (g, u) => `guild:${g}:economy:${u}`,
+        [guildId, userId]
+    );
+}
+
+export function getEconomyPrefix(guildId) {
+    return safeKey(
+        'getEconomyPrefix',
+        id => `guild:${id}:economy:`,
+        [guildId]
+    );
+}
+
+export function getAFKKey(guildId, userId) {
+    return safeKey(
+        'getAFKKey',
+        (g, u) => `guild:${g}:afk:${u}`,
+        [guildId, userId]
+    );
+}
+
+export function getApplicationRolesKey(guildId) {
+    return safeKey(
+        'getApplicationRolesKey',
+        id => `guild:${id}:application-roles`,
+        [guildId]
+    );
+}
+
+export function getApplicationSettingsKey(guildId) {
+    return safeKey(
+        'getApplicationSettingsKey',
+        id => `guild:${id}:application-settings`,
+        [guildId]
+    );
+}
+
+export function getUserApplicationsKey(guildId, userId) {
+    return safeKey(
+        'getUserApplicationsKey',
+        (g, u) => `guild:${g}:applications:user:${u}`,
+        [guildId, userId]
+    );
+}
+
+export function getApplicationKey(guildId, applicationId) {
+    return safeKey(
+        'getApplicationKey',
+        (g, a) => `guild:${g}:applications:${a}`,
+        [guildId, applicationId]
+    );
+}
+
+export function getApplicationsPrefix(guildId) {
+    return safeKey(
+        'getApplicationsPrefix',
+        id => `guild:${id}:applications:`,
+        [guildId]
+    );
+}
+
+export function getJoinToCreateConfigKey(guildId) {
+    return safeKey(
+        'getJoinToCreateConfigKey',
+        id => `guild:${id}:jointocreate`,
+        [guildId]
+    );
+}
+
+export function getJoinToCreateChannelsKey(guildId) {
+    return safeKey(
+        'getJoinToCreateChannelsKey',
+        id => `guild:${id}:jointocreate:channels`,
+        [guildId]
+    );
+}
+
+// ============================================================
+// GENERIC KEY FALLBACKS
+// ============================================================
+
+export function getBirthdayLeftBackupKey(guildId) {
+    return safeKey(
+        'getBirthdayLeftBackupKey',
+        id => `guild:${id}:birthday:left-backup`,
+        [guildId]
+    );
+}
+
+export function getBirthdayTrackingKey(guildId) {
+    return safeKey(
+        'getBirthdayTrackingKey',
+        id => `guild:${id}:birthday:tracking`,
+        [guildId]
+    );
+}
+
+export function getTicketKey(guildId, ticketId) {
+    return safeKey(
+        'getTicketKey',
+        (g, t) => `guild:${g}:tickets:${t}`,
+        [guildId, ticketId]
+    );
+}
+
+export function getTicketCounterKey(guildId) {
+    return safeKey(
+        'getTicketCounterKey',
+        id => `guild:${id}:tickets:counter`,
+        [guildId]
+    );
+}
+
+export function getInviteTrackingKey(guildId) {
+    return safeKey(
+        'getInviteTrackingKey',
+        id => `guild:${id}:invites`,
+        [guildId]
+    );
+}
+
+export function getMemberInvitesKey(guildId, userId) {
+    return safeKey(
+        'getMemberInvitesKey',
+        (g, u) => `guild:${g}:invites:member:${u}`,
+        [guildId, userId]
+    );
+}
+
+export function getInviteUsesKey(guildId, inviteCode) {
+    return safeKey(
+        'getInviteUsesKey',
+        (g, i) => `guild:${g}:invites:uses:${i}`,
+        [guildId, inviteCode]
+    );
+}
+
+export function getFakeAccountKey(guildId, userId) {
+    return safeKey(
+        'getFakeAccountKey',
+        (g, u) => `guild:${g}:fake:${u}`,
+        [guildId, userId]
+    );
+}
+
+export function getWarningsKey(guildId, userId) {
+    return safeKey(
+        'getWarningsKey',
+        (g, u) => `guild:${g}:warnings:${u}`,
+        [guildId, userId]
+    );
+}
+
+export function getWarningsPrefix(guildId) {
+    return safeKey(
+        'getWarningsPrefix',
+        id => `guild:${id}:warnings:`,
+        [guildId]
+    );
+}
+
+export function getUserNotesKey(guildId, userId) {
+    return safeKey(
+        'getUserNotesKey',
+        (g, u) => `guild:${g}:notes:${u}`,
+        [guildId, userId]
+    );
+}
+
+export function getUserNotesListKey(guildId) {
+    return safeKey(
+        'getUserNotesListKey',
+        id => `guild:${id}:notes`,
+        [guildId]
+    );
+}
+
+export function getReactionRoleKey(guildId, messageId) {
+    return safeKey(
+        'getReactionRoleKey',
+        (g, m) => `guild:${g}:reactionroles:${m}`,
+        [guildId, messageId]
+    );
+}
+
+export function getReactionRolesPrefix(guildId) {
+    return safeKey(
+        'getReactionRolesPrefix',
+        id => `guild:${id}:reactionroles:`,
+        [guildId]
+    );
+}
+
+export function getServerCountersKey(guildId) {
+    return safeKey(
+        'getServerCountersKey',
+        id => `guild:${id}:counters`,
+        [guildId]
+    );
+}
+
+export function getGiveawayEntryKey(guildId, giveawayId) {
+    return safeKey(
+        'getGiveawayEntryKey',
+        (g, i) => `guild:${g}:giveaway:${i}:entries`,
+        [guildId, giveawayId]
+    );
+}
+
+export function getGiveawayLockKey(guildId, giveawayId) {
+    return safeKey(
+        'getGiveawayLockKey',
+        (g, i) => `guild:${g}:giveaway:${i}:lock`,
+        [guildId, giveawayId]
+    );
+}
+
+export function canonicalizeKey(key) {
+    try {
+        if (typeof keys?.canonicalizeKey === 'function') {
+            return keys.canonicalizeKey(key);
+        }
+
+        return key;
+    } catch {
+        return key;
+    }
+}
+
+export function getLegacyVariantsForCanonical(key) {
+    try {
+        if (
+            typeof keys?.getLegacyVariantsForCanonical ===
+            'function'
+        ) {
+            return keys.getLegacyVariantsForCanonical(key);
+        }
+
+        return [];
+    } catch {
+        return [];
+    }
+}
 
 // ============================================================
 // HELPERS
@@ -99,10 +536,12 @@ export function unwrapReplitData(data) {
 }
 
 export function getMessage(key, replacements = {}) {
-    let message = BotConfig?.messages?.[key] ?? key;
+    let message =
+        BotConfig?.messages?.[key] ??
+        key;
 
     for (const [name, value] of Object.entries(replacements)) {
-        message = message.replace(
+        message = String(message).replace(
             new RegExp(`\\{${name}\\}`, 'g'),
             String(value)
         );
@@ -114,15 +553,15 @@ export function getMessage(key, replacements = {}) {
 export function getColor(path, fallback = '#000000') {
     if (!path) return fallback;
 
-    const parts = path.split('.');
-    let current = BotConfig?.embeds?.colors;
+    let current =
+        BotConfig?.embeds?.colors;
 
-    for (const part of parts) {
-        if (!current || current[part] === undefined) {
-            logger?.warn?.(
-                `Color path '${path}' not found. Using fallback.`
-            );
-
+    for (const part of String(path).split('.')) {
+        if (
+            !current ||
+            typeof current !== 'object' ||
+            current[part] === undefined
+        ) {
             return fallback;
         }
 
@@ -141,24 +580,25 @@ export function getColor(path, fallback = '#000000') {
 export async function getGuildBirthdays(client, guildId) {
     try {
         if (!client?.db?.get) {
-            logger.error(
-                'Database client is not available for getGuildBirthdays.'
-            );
-
             return {};
         }
 
-        const key = getGuildBirthdaysKey(guildId);
-        const data = await client.db.get(key, {});
+        const key =
+            getGuildBirthdaysKey(guildId);
 
-        const result = unwrapReplitData(data);
+        const data =
+            await client.db.get(key, {});
 
-        return result && typeof result === 'object'
+        const result =
+            unwrapReplitData(data);
+
+        return result &&
+            typeof result === 'object'
             ? result
             : {};
     } catch (error) {
         logger.error(
-            `Error getting birthdays for guild ${guildId}:`,
+            `Error getting birthdays for ${guildId}:`,
             error
         );
 
@@ -175,24 +615,27 @@ export async function setBirthday(
 ) {
     try {
         if (!client?.db?.set) {
-            logger.error(
-                'Database client is not available for setBirthday.'
-            );
-
             return false;
         }
 
-        const key = getGuildBirthdaysKey(guildId);
+        const key =
+            getGuildBirthdaysKey(guildId);
 
         const birthdays =
-            await getGuildBirthdays(client, guildId);
+            await getGuildBirthdays(
+                client,
+                guildId
+            );
 
         birthdays[userId] = {
             month: Number(month),
-            day: Number(day),
+            day: Number(day)
         };
 
-        await client.db.set(key, birthdays);
+        await client.db.set(
+            key,
+            birthdays
+        );
 
         return true;
     } catch (error) {
@@ -212,17 +655,17 @@ export async function deleteBirthday(
 ) {
     try {
         if (!client?.db?.set) {
-            logger.error(
-                'Database client is not available for deleteBirthday.'
-            );
-
             return false;
         }
 
-        const key = getGuildBirthdaysKey(guildId);
+        const key =
+            getGuildBirthdaysKey(guildId);
 
         const birthdays =
-            await getGuildBirthdays(client, guildId);
+            await getGuildBirthdays(
+                client,
+                guildId
+            );
 
         if (birthdays[userId]) {
             delete birthdays[userId];
@@ -257,16 +700,16 @@ export function getMonthName(monthNum) {
         'September',
         'October',
         'November',
-        'December',
+        'December'
     ];
 
-    const month = Number(monthNum);
+    const month =
+        Number(monthNum);
 
-    if (month < 1 || month > 12) {
-        return 'Invalid Month';
-    }
-
-    return months[month - 1];
+    return month >= 1 &&
+        month <= 12
+        ? months[month - 1]
+        : 'Invalid Month';
 }
 
 // ============================================================
@@ -279,34 +722,34 @@ export async function insertVerificationAudit(record) {
             return false;
         }
 
-        const {
-            db,
-            getFromDb,
-            setInDb,
-        } = await import('./database/wrapper.js');
-
-        if (!db.initialized) {
-            await db.initialize();
-        }
+        await loadDatabase();
 
         if (
-            db.isAvailable?.() &&
-            typeof pgDb?.insertVerificationAudit === 'function'
+            pgDb &&
+            typeof pgDb.insertVerificationAudit ===
+                'function'
         ) {
-            return await pgDb.insertVerificationAudit(record);
+            try {
+                return await pgDb.insertVerificationAudit(
+                    record
+                );
+            } catch (error) {
+                logger.error(
+                    'PostgreSQL verification audit failed:',
+                    error
+                );
+            }
         }
 
-        const guildId = record.guildId;
-
-        if (!guildId) {
+        if (!record.guildId) {
             return false;
         }
 
         const key =
-            `verification:audit:${guildId}`;
+            `verification:audit:${record.guildId}`;
 
         const existing =
-            await getFromDb(key, []);
+            await db.get(key, []);
 
         const entries =
             Array.isArray(existing)
@@ -316,13 +759,14 @@ export async function insertVerificationAudit(record) {
         entries.push({
             ...record,
             createdAt:
-                record.createdAt ||
-                new Date().toISOString(),
+                record.createdAt ??
+                new Date().toISOString()
         });
 
         const maxEntries =
             BotConfig?.verification
-                ?.maxInMemoryAuditEntries ?? 1000;
+                ?.maxInMemoryAuditEntries ??
+            1000;
 
         if (entries.length > maxEntries) {
             entries.splice(
@@ -331,12 +775,15 @@ export async function insertVerificationAudit(record) {
             );
         }
 
-        await setInDb(key, entries);
+        await db.set(
+            key,
+            entries
+        );
 
         return true;
     } catch (error) {
         logger.error(
-            'Error storing verification audit:',
+            'Verification audit error:',
             error
         );
 
@@ -349,66 +796,51 @@ export async function insertVerificationAudit(record) {
 // ============================================================
 
 export function getDefaultApplicationSettings() {
+    let questions = [];
+
+    try {
+        const fn =
+            BotConfig?.getDefaultApplicationQuestions;
+
+        if (typeof fn === 'function') {
+            questions = fn();
+        }
+    } catch {
+        questions = [];
+    }
+
     return {
         enabled: false,
-
         applicationChannelId: null,
-
         logChannelId: null,
-
-        questions:
-            typeof getDefaultApplicationQuestions === 'function'
-                ? getDefaultApplicationQuestions()
-                : [],
-
+        questions,
         roles: {
             admin: null,
             reviewer: null,
             accepted: null,
-            denied: null,
+            denied: null
         },
-
         requiredRoles: [],
-
         deniedRoles: [],
-
         minAccountAge: 0,
-
         maxApplications: 1,
-
         cooldown:
             BotConfig?.applications
                 ?.applicationCooldown ?? 7,
-
         allowMultipleApplications: false,
-
         requireVerification: false,
-
         customWelcomeMessage: '',
-
         pendingApplicationRetentionDays: 30,
-
         reviewedApplicationRetentionDays:
             BotConfig?.applications
-                ?.deleteApprovedAfter ?? 14,
+                ?.deleteApprovedAfter ?? 14
     };
 }
 
 // ============================================================
-// SAFETY
+// EXPORT POSTGRES
 // ============================================================
 
-process.on('unhandledRejection', (error) => {
-    logger.error(
-        'Unhandled database promise rejection:',
-        error
-    );
-});
-
-process.on('uncaughtException', (error) => {
-    logger.error(
-        'Uncaught database exception:',
-        error
-    );
-});
-```
+export {
+    pgDb
+};
