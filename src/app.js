@@ -30,18 +30,22 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const DATA_FILE = path.join(DATA_DIR, "vcplus.json");
 
 // ======================================================
-// DATABASE SETUP
+// DATABASE
 // ======================================================
 
 if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.mkdirSync(DATA_DIR, {
+        recursive: true
+    });
 }
 
 if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(
         DATA_FILE,
         JSON.stringify(
-            { guilds: {} },
+            {
+                guilds: {}
+            },
             null,
             2
         )
@@ -138,7 +142,7 @@ function getGuildData(guildId) {
 }
 
 // ======================================================
-// RANK SYSTEM
+// RANKS
 // ======================================================
 
 const RANKS = {
@@ -160,8 +164,7 @@ function normalizeRank(rank) {
     }
 
     const value =
-        String(rank)
-            .toLowerCase();
+        String(rank).toLowerCase();
 
     return RANKS[value]
         ? value
@@ -274,9 +277,7 @@ function successEmbed(
 ) {
     return new EmbedBuilder()
         .setTitle(title)
-        .setDescription(
-            description
-        )
+        .setDescription(description)
         .setTimestamp();
 }
 
@@ -286,9 +287,7 @@ function errorEmbed(
 ) {
     return new EmbedBuilder()
         .setTitle(title)
-        .setDescription(
-            description
-        )
+        .setDescription(description)
         .setTimestamp();
 }
 
@@ -298,9 +297,7 @@ function infoEmbed(
 ) {
     return new EmbedBuilder()
         .setTitle(title)
-        .setDescription(
-            description
-        )
+        .setDescription(description)
         .setTimestamp();
 }
 
@@ -354,7 +351,10 @@ async function sendModerationDM(
                     name: "Reason",
                     value:
                         String(reason)
-                            .slice(0, 1024)
+                            .slice(
+                                0,
+                                1024
+                            )
                 })
                 .setTimestamp();
 
@@ -377,7 +377,7 @@ async function sendModerationDM(
 }
 
 // ======================================================
-// TEMP VC STORAGE
+// TEMPORARY VC STORAGE
 // ======================================================
 
 const tempVCs =
@@ -411,142 +411,189 @@ function getVCData(
 }
 
 // ======================================================
-// VC BUTTONS
+// ORIGINAL VC INTERFACE
 // ======================================================
-
-function vcButton(
-    id,
-    label,
-    emoji,
-    style = ButtonStyle.Secondary
-) {
-    return new ButtonBuilder()
-        .setCustomId(id)
-        .setLabel(label)
-        .setEmoji(emoji)
-        .setStyle(style);
-}
 
 function buildVCInterface() {
     const row1 =
         new ActionRowBuilder()
             .addComponents(
-                vcButton(
-                    "vc_kick",
-                    "Kick",
-                    "👢",
-                    ButtonStyle.Secondary
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_kick"
+                    )
+                    .setLabel(
+                        "Kick"
+                    )
+                    .setStyle(
+                        ButtonStyle.Secondary
+                    ),
 
-                vcButton(
-                    "vc_disconnect",
-                    "Disconnect",
-                    "🔌",
-                    ButtonStyle.Secondary
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_disconnect"
+                    )
+                    .setLabel(
+                        "Disconnect"
+                    )
+                    .setStyle(
+                        ButtonStyle.Secondary
+                    ),
 
-                vcButton(
-                    "vc_ban",
-                    "Ban",
-                    "🔨",
-                    ButtonStyle.Danger
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_ban"
+                    )
+                    .setLabel(
+                        "Ban"
+                    )
+                    .setStyle(
+                        ButtonStyle.Danger
+                    ),
 
-                vcButton(
-                    "vc_reject",
-                    "Reject",
-                    "🚫",
-                    ButtonStyle.Danger
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_reject"
+                    )
+                    .setLabel(
+                        "Reject"
+                    )
+                    .setStyle(
+                        ButtonStyle.Danger
+                    ),
 
-                vcButton(
-                    "vc_permit",
-                    "Permit",
-                    "✅",
-                    ButtonStyle.Success
-                )
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_permit"
+                    )
+                    .setLabel(
+                        "Permit"
+                    )
+                    .setStyle(
+                        ButtonStyle.Success
+                    )
             );
 
     const row2 =
         new ActionRowBuilder()
             .addComponents(
-                vcButton(
-                    "vc_stfu",
-                    "STFU",
-                    "🔇",
-                    ButtonStyle.Danger
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_stfu"
+                    )
+                    .setLabel(
+                        "STFU"
+                    )
+                    .setStyle(
+                        ButtonStyle.Danger
+                    ),
 
-                vcButton(
-                    "vc_unstfu",
-                    "Unmute",
-                    "🔊",
-                    ButtonStyle.Success
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_unstfu"
+                    )
+                    .setLabel(
+                        "Unmute"
+                    )
+                    .setStyle(
+                        ButtonStyle.Success
+                    ),
 
-                vcButton(
-                    "vc_lock",
-                    "Lock",
-                    "🔒",
-                    ButtonStyle.Danger
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_lock"
+                    )
+                    .setLabel(
+                        "Lock"
+                    )
+                    .setStyle(
+                        ButtonStyle.Danger
+                    ),
 
-                vcButton(
-                    "vc_unlock",
-                    "Unlock",
-                    "🔓",
-                    ButtonStyle.Success
-                )
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_unlock"
+                    )
+                    .setLabel(
+                        "Unlock"
+                    )
+                    .setStyle(
+                        ButtonStyle.Success
+                    )
             );
 
     const row3 =
         new ActionRowBuilder()
             .addComponents(
-                vcButton(
-                    "vc_transfer",
-                    "Transfer",
-                    "👑",
-                    ButtonStyle.Primary
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_transfer"
+                    )
+                    .setLabel(
+                        "Transfer"
+                    )
+                    .setStyle(
+                        ButtonStyle.Primary
+                    ),
 
-                vcButton(
-                    "vc_claim",
-                    "Claim",
-                    "🏆",
-                    ButtonStyle.Primary
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_claim"
+                    )
+                    .setLabel(
+                        "Claim"
+                    )
+                    .setStyle(
+                        ButtonStyle.Primary
+                    ),
 
-                vcButton(
-                    "vc_forceclaim",
-                    "Force Claim",
-                    "⚡",
-                    ButtonStyle.Primary
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_forceclaim"
+                    )
+                    .setLabel(
+                        "Force Claim"
+                    )
+                    .setStyle(
+                        ButtonStyle.Primary
+                    ),
 
-                vcButton(
-                    "vc_rename",
-                    "Rename",
-                    "✏️",
-                    ButtonStyle.Secondary
-                ),
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_rename"
+                    )
+                    .setLabel(
+                        "Rename"
+                    )
+                    .setStyle(
+                        ButtonStyle.Secondary
+                    ),
 
-                vcButton(
-                    "vc_limit",
-                    "Limit",
-                    "👥",
-                    ButtonStyle.Secondary
-                )
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_limit"
+                    )
+                    .setLabel(
+                        "Limit"
+                    )
+                    .setStyle(
+                        ButtonStyle.Secondary
+                    )
             );
 
     const row4 =
         new ActionRowBuilder()
             .addComponents(
-                vcButton(
-                    "vc_refresh",
-                    "Refresh",
-                    "🔄",
-                    ButtonStyle.Secondary
-                )
+                new ButtonBuilder()
+                    .setCustomId(
+                        "vc_refresh"
+                    )
+                    .setLabel(
+                        "Refresh"
+                    )
+                    .setStyle(
+                        ButtonStyle.Secondary
+                    )
             );
 
     return [
@@ -558,7 +605,7 @@ function buildVCInterface() {
 }
 
 // ======================================================
-// UPDATE VC INTERFACE
+// VC INTERFACE EMBED
 // ======================================================
 
 async function updateVCInterface(
@@ -600,14 +647,18 @@ async function updateVCInterface(
     const embed =
         new EmbedBuilder()
             .setTitle(
-                "Voice Channel"
+                "Voice Channel Controls"
             )
             .setDescription(
-                `Manage **${channel.name}** from this panel.\n\n` +
-                `Owner: **${ownerName}**\n` +
-                `Members: **${memberCount}**\n` +
-                `Limit: **${limit}**\n` +
-                `Status: **${status}**`
+                [
+                    `Channel: **${channel.name}**`,
+                    `Owner: **${ownerName}**`,
+                    `Members: **${memberCount}**`,
+                    `Limit: **${limit}**`,
+                    `Status: **${status}**`,
+                    "",
+                    "Use the controls below to manage your voice channel."
+                ].join("\n")
             )
             .setTimestamp();
 
@@ -615,7 +666,7 @@ async function updateVCInterface(
         if (
             data.interfaceMessageId
         ) {
-            const oldMessage =
+            const existing =
                 await channel.messages
                     .fetch(
                         data.interfaceMessageId
@@ -624,9 +675,11 @@ async function updateVCInterface(
                         () => null
                     );
 
-            if (oldMessage) {
-                await oldMessage.edit({
-                    embeds: [embed],
+            if (existing) {
+                await existing.edit({
+                    embeds: [
+                        embed
+                    ],
                     components:
                         buildVCInterface()
                 });
@@ -637,7 +690,9 @@ async function updateVCInterface(
 
         const message =
             await channel.send({
-                embeds: [embed],
+                embeds: [
+                    embed
+                ],
                 components:
                     buildVCInterface()
             });
@@ -645,7 +700,6 @@ async function updateVCInterface(
         data.interfaceMessageId =
             message.id;
 
-        saveDB();
     } catch (error) {
         console.error(
             "VC interface error:",
@@ -675,15 +729,19 @@ async function applyVCBan(
         userId
     );
 
-    try {
-        await channel.permissionOverwrites.edit(
-            userId,
-            {
-                Connect: false,
-                Speak: false
-            }
-        );
-    } catch {}
+    data.rejected.delete(
+        userId
+    );
+
+    await channel.permissionOverwrites.edit(
+        userId,
+        {
+            Connect: false,
+            Speak: false
+        }
+    ).catch(
+        () => {}
+    );
 
     const member =
         channel.guild.members.cache.get(
@@ -719,11 +777,11 @@ async function removeVCBan(
         userId
     );
 
-    try {
-        await channel.permissionOverwrites.delete(
-            userId
-        );
-    } catch {}
+    await channel.permissionOverwrites.delete(
+        userId
+    ).catch(
+        () => {}
+    );
 }
 
 // ======================================================
@@ -774,12 +832,12 @@ async function createPersonalVC(
                 0,
                 90
             ) ||
-        "user";
+        "User";
 
     const channel =
         await member.guild.channels.create({
             name:
-                `🎙️・${username}`,
+                `${username} VC`,
 
             type:
                 ChannelType.GuildVoice,
@@ -806,7 +864,14 @@ async function createPersonalVC(
                 }
             ]
         }).catch(
-            () => null
+            error => {
+                console.error(
+                    "VC creation error:",
+                    error
+                );
+
+                return null;
+            }
         );
 
     if (!channel) {
@@ -1026,7 +1091,32 @@ function generalHelp() {
         "General Commands",
         "",
         "-help",
+        "",
+        "Voice Commands",
         "-vc setup",
+        "-vc lock",
+        "-vc unlock",
+        "-vc rename name",
+        "-vc limit amount",
+        "-vc claim",
+        "-vc forceclaim",
+        "",
+        "Voice Interface",
+        "Kick",
+        "Disconnect",
+        "Ban",
+        "Reject",
+        "Permit",
+        "STFU",
+        "Unmute",
+        "Lock",
+        "Unlock",
+        "Transfer",
+        "Claim",
+        "Force Claim",
+        "Rename",
+        "Limit",
+        "Refresh",
         "",
         "Moderation",
         "-ban @user [reason]",
@@ -1042,23 +1132,6 @@ function generalHelp() {
         "-rank @user rank",
         "-godmode @user",
         "",
-        "Voice",
-        "-vc setup",
-        "-vc kick @user",
-        "-vc disconnect @user",
-        "-vc ban @user",
-        "-vc reject @user",
-        "-vc permit @user",
-        "-vc lock",
-        "-vc unlock",
-        "-vc limit amount",
-        "-vc rename name",
-        "-vc transfer @user",
-        "-vc claim",
-        "-vc forceclaim",
-        "-vc stfu @user",
-        "-vc unstfu @user",
-        "",
         "Filter",
         "-filter on",
         "-filter off",
@@ -1072,7 +1145,7 @@ function generalHelp() {
 }
 
 // ======================================================
-// MESSAGE COMMANDS
+// MESSAGE COMMAND HANDLER
 // ======================================================
 
 client.on(
@@ -1087,12 +1160,11 @@ client.on(
                 return;
             }
 
-            const filtered =
+            if (
                 await handleFilteredMessage(
                     message
-                );
-
-            if (filtered) {
+                )
+            ) {
                 return;
             }
 
@@ -1131,9 +1203,9 @@ client.on(
                     message.guild.id
                 );
 
-            // ==========================================
+            // ==================================================
             // HELP
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -1149,9 +1221,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // FILTER
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -1174,17 +1246,6 @@ client.on(
                     args
                         .shift()
                         ?.toLowerCase();
-
-                if (!sub) {
-                    return message.reply({
-                        embeds: [
-                            infoEmbed(
-                                "Filter",
-                                "Use -filter on, -filter off, -filter add, -filter remove, -filter list, -filter log, -filter strikes, or -filter reset."
-                            )
-                        ]
-                    });
-                }
 
                 if (
                     sub ===
@@ -1410,12 +1471,19 @@ client.on(
                     });
                 }
 
-                return;
+                return message.reply({
+                    embeds: [
+                        errorEmbed(
+                            "Filter",
+                            "Unknown filter command."
+                        )
+                    ]
+                });
             }
 
-            // ==========================================
+            // ==================================================
             // VC SETUP
-            // ==========================================
+            // ==================================================
 
             if (
                 command === "vc" &&
@@ -1469,7 +1537,7 @@ client.on(
                 if (!category) {
                     category =
                         await message.guild.channels.create({
-                            name: "voice",
+                            name: "Voice",
                             type: ChannelType.GuildCategory
                         }).catch(
                             () => null
@@ -1478,8 +1546,12 @@ client.on(
 
                 const jtc =
                     await message.guild.channels.create({
-                        name: "Join To Create",
-                        type: ChannelType.GuildVoice,
+                        name:
+                            "Join To Create",
+
+                        type:
+                            ChannelType.GuildVoice,
+
                         parent:
                             category?.id
                     }).catch(
@@ -1519,9 +1591,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // VC COMMANDS
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -1537,7 +1609,7 @@ client.on(
                         embeds: [
                             infoEmbed(
                                 "Voice",
-                                "Use the VC interface or a supported VC command."
+                                "Use the voice interface or a supported VC command."
                             )
                         ]
                     });
@@ -1567,12 +1639,9 @@ client.on(
                         voiceChannel.id
                     );
 
-                const owner =
-                    vcData.ownerId ===
-                    member.id;
-
                 if (
-                    !owner &&
+                    vcData.ownerId !==
+                        member.id &&
                     !isFounder(member)
                 ) {
                     return message.reply({
@@ -1608,6 +1677,19 @@ client.on(
                             user.id,
                             {
                                 Connect: true
+                            }
+                        ).catch(
+                            () => {}
+                        );
+                    }
+
+                    for (
+                        const userId of vcData.banned
+                    ) {
+                        await voiceChannel.permissionOverwrites.edit(
+                            userId,
+                            {
+                                Connect: false
                             }
                         ).catch(
                             () => {}
@@ -1860,9 +1942,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // BAN
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -1952,9 +2034,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // UNBAN
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -2012,10 +2094,11 @@ client.on(
                     });
                 }
 
-                await message.guild.members.unban(
-                    userId,
-                    "Unbanned by moderator"
-                );
+                await message.guild.members
+                    .unban(
+                        userId,
+                        "Unbanned by moderator"
+                    );
 
                 data.foreverBanned =
                     data.foreverBanned.filter(
@@ -2043,9 +2126,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // BANLIST
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -2100,9 +2183,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // KICK
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -2180,9 +2263,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // TIMEOUT
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -2288,9 +2371,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // UNTIMEOUT
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -2349,7 +2432,7 @@ client.on(
                 await sendModerationDM(
                     target.user,
                     message.guild,
-                    "untimeouted",
+                    "untimeout",
                     "Your timeout was removed."
                 );
 
@@ -2363,9 +2446,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // FOREVER BAN
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -2439,9 +2522,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // RANK
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -2498,9 +2581,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // GODMODE
-            // ==========================================
+            // ==================================================
 
             if (
                 command ===
@@ -2575,9 +2658,9 @@ client.on(
                 });
             }
 
-            // ==========================================
+            // ==================================================
             // PURGE
-            // ==========================================
+            // ==================================================
 
             if (
                 command === "purge" ||
@@ -2664,18 +2747,20 @@ client.on(
             }
 
             // ==================================================
-            // BUTTONS
+            // BUTTON INTERACTIONS
             // ==================================================
 
             if (
                 interaction.isButton()
             ) {
                 const member =
-                    await interaction.guild.members.fetch(
-                        interaction.user.id
-                    ).catch(
-                        () => null
-                    );
+                    await interaction.guild.members
+                        .fetch(
+                            interaction.user.id
+                        )
+                        .catch(
+                            () => null
+                        );
 
                 if (!member) {
                     return;
@@ -2700,7 +2785,7 @@ client.on(
                         embeds: [
                             errorEmbed(
                                 "Voice Channel",
-                                "This voice channel is no longer managed by the bot."
+                                "This channel is no longer managed by the bot."
                             )
                         ],
                         ephemeral: true
@@ -2729,9 +2814,9 @@ client.on(
                     });
                 }
 
-                // ==========================================
+                // ==================================================
                 // REFRESH
-                // ==========================================
+                // ==================================================
 
                 if (
                     interaction.customId ===
@@ -2752,91 +2837,9 @@ client.on(
                     });
                 }
 
-                // ==========================================
-                // CLAIM
-                // ==========================================
-
-                if (
-                    interaction.customId ===
-                    "vc_claim"
-                ) {
-                    if (
-                        voiceChannel.members.has(
-                            vcData.ownerId
-                        )
-                    ) {
-                        return interaction.reply({
-                            embeds: [
-                                errorEmbed(
-                                    "Claim Failed",
-                                    "The current owner is still in the voice channel."
-                                )
-                            ],
-                            ephemeral: true
-                        });
-                    }
-
-                    vcData.ownerId =
-                        member.id;
-
-                    await updateVCInterface(
-                        voiceChannel
-                    );
-
-                    return interaction.reply({
-                        embeds: [
-                            successEmbed(
-                                "Voice Claimed",
-                                "You are now the owner."
-                            )
-                        ],
-                        ephemeral: true
-                    });
-                }
-
-                // ==========================================
-                // FORCE CLAIM
-                // ==========================================
-
-                if (
-                    interaction.customId ===
-                    "vc_forceclaim"
-                ) {
-                    if (
-                        !founder
-                    ) {
-                        return interaction.reply({
-                            embeds: [
-                                errorEmbed(
-                                    "Access Denied",
-                                    "Only Founder can force claim a voice channel."
-                                )
-                            ],
-                            ephemeral: true
-                        });
-                    }
-
-                    vcData.ownerId =
-                        member.id;
-
-                    await updateVCInterface(
-                        voiceChannel
-                    );
-
-                    return interaction.reply({
-                        embeds: [
-                            successEmbed(
-                                "Voice Force Claimed",
-                                "You are now the owner."
-                            )
-                        ],
-                        ephemeral: true
-                    });
-                }
-
-                // ==========================================
+                // ==================================================
                 // LOCK
-                // ==========================================
+                // ==================================================
 
                 if (
                     interaction.customId ===
@@ -2895,9 +2898,9 @@ client.on(
                     });
                 }
 
-                // ==========================================
+                // ==================================================
                 // UNLOCK
-                // ==========================================
+                // ==================================================
 
                 if (
                     interaction.customId ===
@@ -2943,9 +2946,91 @@ client.on(
                     });
                 }
 
-                // ==========================================
+                // ==================================================
+                // CLAIM
+                // ==================================================
+
+                if (
+                    interaction.customId ===
+                    "vc_claim"
+                ) {
+                    if (
+                        voiceChannel.members.has(
+                            vcData.ownerId
+                        )
+                    ) {
+                        return interaction.reply({
+                            embeds: [
+                                errorEmbed(
+                                    "Claim Failed",
+                                    "The current owner is still in the voice channel."
+                                )
+                            ],
+                            ephemeral: true
+                        });
+                    }
+
+                    vcData.ownerId =
+                        member.id;
+
+                    await updateVCInterface(
+                        voiceChannel
+                    );
+
+                    return interaction.reply({
+                        embeds: [
+                            successEmbed(
+                                "Voice Claimed",
+                                "You are now the owner."
+                            )
+                        ],
+                        ephemeral: true
+                    });
+                }
+
+                // ==================================================
+                // FORCE CLAIM
+                // ==================================================
+
+                if (
+                    interaction.customId ===
+                    "vc_forceclaim"
+                ) {
+                    if (
+                        !founder
+                    ) {
+                        return interaction.reply({
+                            embeds: [
+                                errorEmbed(
+                                    "Access Denied",
+                                    "Only Founder can force claim a voice channel."
+                                )
+                            ],
+                            ephemeral: true
+                        });
+                    }
+
+                    vcData.ownerId =
+                        member.id;
+
+                    await updateVCInterface(
+                        voiceChannel
+                    );
+
+                    return interaction.reply({
+                        embeds: [
+                            successEmbed(
+                                "Voice Force Claimed",
+                                "You are now the owner."
+                            )
+                        ],
+                        ephemeral: true
+                    });
+                }
+
+                // ==================================================
                 // RENAME
-                // ==========================================
+                // ==================================================
 
                 if (
                     interaction.customId ===
@@ -2993,9 +3078,9 @@ client.on(
                     );
                 }
 
-                // ==========================================
+                // ==================================================
                 // LIMIT
-                // ==========================================
+                // ==================================================
 
                 if (
                     interaction.customId ===
@@ -3043,9 +3128,9 @@ client.on(
                     );
                 }
 
-                // ==========================================
-                // USER TARGET ACTIONS
-                // ==========================================
+                // ==================================================
+                // TARGET ACTIONS
+                // ==================================================
 
                 const targetActions = {
                     vc_kick: "kick",
@@ -3058,22 +3143,16 @@ client.on(
                     vc_transfer: "transfer"
                 };
 
-                if (
+                const action =
                     targetActions[
                         interaction.customId
-                    ]
-                ) {
-                    const action =
-                        targetActions[
-                            interaction.customId
-                        ];
+                    ];
 
+                if (action) {
                     if (
                         (
-                            action ===
-                                "stfu" ||
-                            action ===
-                                "unstfu"
+                            action === "stfu" ||
+                            action === "unstfu"
                         ) &&
                         !isGod(member)
                     ) {
@@ -3115,11 +3194,13 @@ client.on(
                 }
 
                 const member =
-                    await interaction.guild.members.fetch(
-                        interaction.user.id
-                    ).catch(
-                        () => null
-                    );
+                    await interaction.guild.members
+                        .fetch(
+                            interaction.user.id
+                        )
+                        .catch(
+                            () => null
+                        );
 
                 if (!member) {
                     return;
@@ -3171,11 +3252,13 @@ client.on(
                     interaction.values[0];
 
                 const target =
-                    await interaction.guild.members.fetch(
-                        targetId
-                    ).catch(
-                        () => null
-                    );
+                    await interaction.guild.members
+                        .fetch(
+                            targetId
+                        )
+                        .catch(
+                            () => null
+                        );
 
                 if (!target) {
                     return interaction.update({
@@ -3477,11 +3560,13 @@ client.on(
                 interaction.isModalSubmit()
             ) {
                 const member =
-                    await interaction.guild.members.fetch(
-                        interaction.user.id
-                    ).catch(
-                        () => null
-                    );
+                    await interaction.guild.members
+                        .fetch(
+                            interaction.user.id
+                        )
+                        .catch(
+                            () => null
+                        );
 
                 if (!member) {
                     return;
@@ -3535,9 +3620,10 @@ client.on(
                     "vc_rename_modal"
                 ) {
                     const name =
-                        interaction.fields.getTextInputValue(
-                            "vc_name"
-                        );
+                        interaction.fields
+                            .getTextInputValue(
+                                "vc_name"
+                            );
 
                     const cleanName =
                         name
@@ -3589,9 +3675,10 @@ client.on(
                 ) {
                     const amount =
                         Number(
-                            interaction.fields.getTextInputValue(
-                                "vc_limit_amount"
-                            )
+                            interaction.fields
+                                .getTextInputValue(
+                                    "vc_limit_amount"
+                                )
                         );
 
                     if (
@@ -3685,9 +3772,9 @@ client.on(
                     guild.id
                 );
 
-            // ==========================================
+            // ==================================================
             // JOIN TO CREATE
-            // ==========================================
+            // ==================================================
 
             if (
                 newState.channelId &&
@@ -3705,9 +3792,9 @@ client.on(
                 return;
             }
 
-            // ==========================================
-            // ENTER TEMP VC
-            // ==========================================
+            // ==================================================
+            // ENTER PERSONAL VC
+            // ==================================================
 
             if (
                 newState.channelId
@@ -3770,9 +3857,9 @@ client.on(
                 }
             }
 
-            // ==========================================
-            // LEAVE TEMP VC
-            // ==========================================
+            // ==================================================
+            // LEAVE PERSONAL VC
+            // ==================================================
 
             if (
                 oldState.channelId
@@ -3802,9 +3889,9 @@ client.on(
                 }
             }
 
-            // ==========================================
-            // UPDATE NEW VC
-            // ==========================================
+            // ==================================================
+            // UPDATE NEW PERSONAL VC
+            // ==================================================
 
             if (
                 newState.channelId
@@ -3835,7 +3922,7 @@ client.on(
 );
 
 // ======================================================
-// ANTI NUKE
+// ANTI-NUKE TRACKER
 // ======================================================
 
 const auditTracker =
@@ -3958,7 +4045,9 @@ async function securityPunish(
     saveDB();
 }
 
-// CHANNEL CREATE
+// ======================================================
+// ANTI-NUKE: CHANNEL CREATE
+// ======================================================
 
 client.on(
     "channelCreate",
@@ -4020,7 +4109,9 @@ client.on(
     }
 );
 
-// CHANNEL DELETE
+// ======================================================
+// ANTI-NUKE: CHANNEL DELETE
+// ======================================================
 
 client.on(
     "channelDelete",
@@ -4077,7 +4168,9 @@ client.on(
     }
 );
 
-// ROLE CREATE
+// ======================================================
+// ANTI-NUKE: ROLE CREATE
+// ======================================================
 
 client.on(
     "roleCreate",
@@ -4135,7 +4228,9 @@ client.on(
     }
 );
 
-// ROLE DELETE
+// ======================================================
+// ANTI-NUKE: ROLE DELETE
+// ======================================================
 
 client.on(
     "roleDelete",
@@ -4275,7 +4370,8 @@ client.once(
         client.user.setPresence({
             activities: [
                 {
-                    name: "VC+",
+                    name:
+                        "VC+",
                     type:
                         ActivityType.Watching
                 }
