@@ -19,6 +19,10 @@ import path from "node:path";
 const PREFIX = "-";
 const BOT_NAME = "VC+";
 
+// ======================================================
+// CLIENT
+// ======================================================
+
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -97,10 +101,15 @@ function getGuildData(guildId) {
             ranks: {},
             foreverBanned: [],
             godmode: [],
+
+            // VOUCH SYSTEM
+            vouches: {},
+
             jtc: {
                 categoryId: null,
                 triggerId: null
             },
+
             protection: {
                 enabled: true,
                 actionWindow: 10000,
@@ -111,7 +120,14 @@ function getGuildData(guildId) {
         saveDB();
     }
 
-    return db.guilds[guildId];
+    const data = db.guilds[guildId];
+
+    // Make sure older databases get vouches
+    if (!data.vouches) {
+        data.vouches = {};
+    }
+
+    return data;
 }
 
 loadDB();
@@ -218,9 +234,7 @@ async function getTarget(message, argument) {
 const temporaryVCs = new Map();
 
 /*
-temporaryVCs:
-
-guildId -> {
+guild voice channel ID -> {
     guildId,
     ownerId,
     banned,
@@ -391,6 +405,7 @@ async function sendInterface(channel, ownerId) {
             [
                 `Owner: <@${ownerId}>`,
                 "",
+                "**Voice Master**",
                 "`-vc kick @user`",
                 "`-vc ban @user`",
                 "`-vc reject @user`",
@@ -423,45 +438,85 @@ async function sendInterface(channel, ownerId) {
 }
 
 // ======================================================
-// HELP
+// HELP - ORGANIZED COMMAND BOX
 // ======================================================
 
 function helpEmbed() {
     return box(
-        "VC+ Commands",
+        "VC+ Help",
         [
             "**General**",
-            "`-help`",
-            "`-ping`",
-            "`-interface`",
-            "`-ranklist`",
-            "",
-            "**Ranks**",
-            "`-rank @user rank`",
-            "`-godmode on/off @user`",
-            "",
-            "**Moderation**",
-            "`-ban @user reason`",
-            "`-kick @user reason`",
-            "`-timeout @user minutes`",
-            "`-untimeout @user`",
-            "`-foreverban @user`",
-            "",
+            "```",
+            "-help        View this menu",
+            "-ping        Check bot latency",
+            "-interface   Open VC interface",
+            "-ranklist    View rank hierarchy",
+            "```",
+
             "**Voice Master**",
-            "`-vc setup`",
-            "`-vc kick @user`",
-            "`-vc ban @user`",
-            "`-vc reject @user`",
-            "`-vc permit @user`",
-            "`-vc lock`",
-            "`-vc unlock`",
-            "`-vc limit 10`",
-            "`-vc rename name`",
-            "`-vc transfer @user`",
-            "`-vc stfu @user`",
-            "`-vc unstfu @user`"
+            "```",
+            "-vc setup",
+            "-vc kick @user",
+            "-vc ban @user",
+            "-vc reject @user",
+            "-vc permit @user",
+            "-vc lock",
+            "-vc unlock",
+            "-vc limit 10",
+            "-vc rename name",
+            "-vc transfer @user",
+            "-vc stfu @user",
+            "-vc unstfu @user",
+            "```",
+
+            "**Vouch**",
+            "```",
+            "-vouch @user reason",
+            "-vouches @user",
+            "-vouchlist",
+            "-removevouch @user number",
+            "```",
+
+            "**Moderation**",
+            "```",
+            "-ban @user reason",
+            "-kick @user reason",
+            "-timeout @user minutes",
+            "-untimeout @user",
+            "-foreverban @user",
+            "```",
+
+            "**Management**",
+            "```",
+            "-rank @user rank",
+            "-godmode on @user",
+            "-godmode off @user",
+            "```"
         ].join("\n")
     );
+}
+
+// ======================================================
+// VOUCH HELPERS
+// ======================================================
+
+function getVouches(guildId, userId) {
+    const data = getGuildData(guildId);
+
+    if (!data.vouches[userId]) {
+        data.vouches[userId] = [];
+    }
+
+    return data.vouches[userId];
+}
+
+function formatVouch(vouch, number) {
+    return [
+        `**#${number}**`,
+        `From: <@${vouch.from}>`,
+        `Reason: ${vouch.reason}`,
+        `<t:${Math.floor(vouch.timestamp / 1000)}:R>`
+    ].join("\n");
 }
 
 // ======================================================
@@ -535,7 +590,7 @@ client.on("messageCreate", async message => {
         // ==================================================
 
         if (command === "interface") {
-            if (!message.member.voice.channel) {
+            if (!member.voice.channel) {
                 return sendBox(
                     message,
                     "VC+",
@@ -545,7 +600,7 @@ client.on("messageCreate", async message => {
 
             const vc =
                 temporaryVCs.get(
-                    message.member.voice.channel.id
+                    member.voice.channel.id
                 );
 
             if (!vc) {
@@ -557,7 +612,7 @@ client.on("messageCreate", async message => {
             }
 
             return sendInterface(
-                message.member.voice.channel,
+                member.voice.channel,
                 vc.ownerId
             );
         }
@@ -586,22 +641,290 @@ client.on("messageCreate", async message => {
         }
 
         // ==================================================
+        // VOUCH
+        // ==================================================
+
+        if (command === "vouch") {
+            const target =
+                await getTarget(
+                    message,
+                    args[0]
+                );
+
+            if (!target) {
+                return sendBox(
+                    message,
+                    "Vouch",
+                    "Usage: `-vouch @user reason`"
+                );
+            }
+
+            if (target.id === message.author.id) {
+                return sendBox(
+                    message,
+                    "Vouch",
+                    "You can't vouch yourself."
+                );
+            }
+
+            const reason =
+                args.slice(1).join(" ").trim();
+
+            if (!reason) {
+                return sendBox(
+                    message,
+                    "Vouch",
+                    "You need to provide a reason."
+                );
+            }
+
+            if (reason.length > 500) {
+                return sendBox(
+                    message,
+                    "Vouch",
+                    "Your vouch reason is too long. Keep it under 500 characters."
+                );
+            }
+
+            const vouches =
+                getVouches(
+                    message.guild.id,
+                    target.id
+                );
+
+            vouches.push({
+                from: message.author.id,
+                reason,
+                timestamp: Date.now()
+            });
+
+            saveDB();
+
+            const total =
+                vouches.length;
+
+            const embed = new EmbedBuilder()
+                .setTitle("Vouch")
+                .setDescription(
+                    [
+                        `<@${message.author.id}> vouched for <@${target.id}>.`,
+                        "",
+                        `**Reason**`,
+                        reason,
+                        "",
+                        `**Total Vouches:** ${total}`
+                    ].join("\n")
+                )
+                .setTimestamp();
+
+            return message.reply({
+                embeds: [embed]
+            }).catch(() => {});
+        }
+
+        // ==================================================
+        // VOUCHES
+        // ==================================================
+
+        if (command === "vouches") {
+            const target =
+                await getTarget(
+                    message,
+                    args[0]
+                );
+
+            if (!target) {
+                return sendBox(
+                    message,
+                    "Vouches",
+                    "Usage: `-vouches @user`"
+                );
+            }
+
+            const vouches =
+                getVouches(
+                    message.guild.id,
+                    target.id
+                );
+
+            if (vouches.length === 0) {
+                return sendBox(
+                    message,
+                    "Vouches",
+                    `<@${target.id}> has no vouches yet.`
+                );
+            }
+
+            const recent =
+                vouches.slice(-10).reverse();
+
+            const description =
+                recent.map(
+                    (vouch, index) =>
+                        formatVouch(
+                            vouch,
+                            vouches.length - index
+                        )
+                ).join("\n\n");
+
+            return message.reply({
+                embeds: [
+                    box(
+                        `${target.user.username}'s Vouches`,
+                        [
+                            `Total: **${vouches.length}**`,
+                            "",
+                            description
+                        ].join("\n")
+                    )
+                ]
+            }).catch(() => {});
+        }
+
+        // ==================================================
+        // VOUCH LIST
+        // ==================================================
+
+        if (command === "vouchlist") {
+            const data =
+                getGuildData(
+                    message.guild.id
+                );
+
+            const entries =
+                Object.entries(
+                    data.vouches
+                )
+                .map(([userId, vouches]) => ({
+                    userId,
+                    count: vouches.length
+                }))
+                .filter(
+                    entry =>
+                        entry.count > 0
+                )
+                .sort(
+                    (a, b) =>
+                        b.count - a.count
+                )
+                .slice(0, 10);
+
+            if (entries.length === 0) {
+                return sendBox(
+                    message,
+                    "Vouch Leaderboard",
+                    "There are no vouches yet."
+                );
+            }
+
+            const description =
+                entries.map(
+                    (entry, index) =>
+                        `**${index + 1}.** <@${entry.userId}> — **${entry.count}** vouch${entry.count === 1 ? "" : "es"}`
+                ).join("\n");
+
+            return sendBox(
+                message,
+                "Vouch Leaderboard",
+                description
+            );
+        }
+
+        // ==================================================
+        // REMOVE VOUCH
+        // ==================================================
+
+        if (command === "removevouch") {
+            const target =
+                await getTarget(
+                    message,
+                    args[0]
+                );
+
+            const number =
+                Number(args[1]);
+
+            if (
+                !target ||
+                !Number.isInteger(number) ||
+                number < 1
+            ) {
+                return sendBox(
+                    message,
+                    "Remove Vouch",
+                    "Usage: `-removevouch @user number`"
+                );
+            }
+
+            const vouches =
+                getVouches(
+                    message.guild.id,
+                    target.id
+                );
+
+            if (
+                number > vouches.length
+            ) {
+                return sendBox(
+                    message,
+                    "Remove Vouch",
+                    "That vouch does not exist."
+                );
+            }
+
+            const vouch =
+                vouches[number - 1];
+
+            // Users can remove their own vouch.
+            // Staff+ can remove any vouch.
+            const isStaff =
+                getRank(member) >=
+                RANKS.moderator;
+
+            if (
+                vouch.from !==
+                    message.author.id &&
+                !isStaff
+            ) {
+                return sendBox(
+                    message,
+                    "Remove Vouch",
+                    "You can only remove your own vouch."
+                );
+            }
+
+            vouches.splice(
+                number - 1,
+                1
+            );
+
+            saveDB();
+
+            return sendBox(
+                message,
+                "Remove Vouch",
+                `Removed vouch **#${number}** from <@${target.id}>.`
+            );
+        }
+
+        // ==================================================
         // VC COMMANDS
         // ==================================================
 
         if (command === "vc") {
-            const sub = args.shift()?.toLowerCase();
+            const sub =
+                args.shift()?.toLowerCase();
 
-            // ==============================================
+            // ----------------------------------------------
             // VC SETUP
-            // ==============================================
+            // ----------------------------------------------
 
             if (sub === "setup") {
                 if (
-                    !message.member.permissions.has(
+                    !member.permissions.has(
                         PermissionFlagsBits.ManageChannels
                     ) &&
-                    !isFounder(message.member)
+                    !isFounder(member)
                 ) {
                     return sendBox(
                         message,
@@ -626,16 +949,17 @@ client.on("messageCreate", async message => {
                 return sendBox(
                     message,
                     "VC+ Setup",
-                    `Created/loaded:\n\nCategory: **VC+**\nVoice: **Join to Create**`
+                    [
+                        "Created/loaded:",
+                        "",
+                        "Category: **VC+**",
+                        "Voice: **Join to Create**"
+                    ].join("\n")
                 );
             }
 
-            // ==============================================
-            // GET CURRENT VC
-            // ==============================================
-
             const voiceChannel =
-                message.member.voice.channel;
+                member.voice.channel;
 
             if (!voiceChannel) {
                 return sendBox(
@@ -659,11 +983,12 @@ client.on("messageCreate", async message => {
             }
 
             const isOwner =
-                vc.ownerId === message.author.id;
+                vc.ownerId ===
+                message.author.id;
 
-            // ==============================================
-            // VC KICK
-            // ==============================================
+            // ----------------------------------------------
+            // KICK
+            // ----------------------------------------------
 
             if (sub === "kick") {
                 if (!isOwner) {
@@ -689,7 +1014,8 @@ client.on("messageCreate", async message => {
                 }
 
                 if (
-                    target.id === message.author.id
+                    target.id ===
+                    message.author.id
                 ) {
                     return sendBox(
                         message,
@@ -720,9 +1046,9 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // VC BAN
-            // ==============================================
+            // ----------------------------------------------
+            // BAN
+            // ----------------------------------------------
 
             if (sub === "ban") {
                 if (!isOwner) {
@@ -747,7 +1073,9 @@ client.on("messageCreate", async message => {
                     );
                 }
 
-                vc.banned.add(target.id);
+                vc.banned.add(
+                    target.id
+                );
 
                 if (
                     target.voice.channelId ===
@@ -765,9 +1093,9 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // VC REJECT
-            // ==============================================
+            // ----------------------------------------------
+            // REJECT
+            // ----------------------------------------------
 
             if (sub === "reject") {
                 if (!isOwner) {
@@ -792,7 +1120,9 @@ client.on("messageCreate", async message => {
                     );
                 }
 
-                vc.rejected.add(target.id);
+                vc.rejected.add(
+                    target.id
+                );
 
                 return sendBox(
                     message,
@@ -801,9 +1131,9 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // VC PERMIT
-            // ==============================================
+            // ----------------------------------------------
+            // PERMIT
+            // ----------------------------------------------
 
             if (sub === "permit") {
                 if (!isOwner) {
@@ -828,9 +1158,17 @@ client.on("messageCreate", async message => {
                     );
                 }
 
-                vc.banned.delete(target.id);
-                vc.rejected.delete(target.id);
-                vc.permitted.add(target.id);
+                vc.banned.delete(
+                    target.id
+                );
+
+                vc.rejected.delete(
+                    target.id
+                );
+
+                vc.permitted.add(
+                    target.id
+                );
 
                 return sendBox(
                     message,
@@ -839,9 +1177,9 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // VC LOCK
-            // ==============================================
+            // ----------------------------------------------
+            // LOCK
+            // ----------------------------------------------
 
             if (sub === "lock") {
                 if (!isOwner) {
@@ -868,9 +1206,9 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // VC UNLOCK
-            // ==============================================
+            // ----------------------------------------------
+            // UNLOCK
+            // ----------------------------------------------
 
             if (sub === "unlock") {
                 if (!isOwner) {
@@ -897,9 +1235,9 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // VC LIMIT
-            // ==============================================
+            // ----------------------------------------------
+            // LIMIT
+            // ----------------------------------------------
 
             if (sub === "limit") {
                 if (!isOwner) {
@@ -937,9 +1275,9 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // VC RENAME
-            // ==============================================
+            // ----------------------------------------------
+            // RENAME
+            // ----------------------------------------------
 
             if (sub === "rename") {
                 if (!isOwner) {
@@ -981,9 +1319,9 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // VC TRANSFER
-            // ==============================================
+            // ----------------------------------------------
+            // TRANSFER
+            // ----------------------------------------------
 
             if (sub === "transfer") {
                 if (!isOwner) {
@@ -1019,7 +1357,8 @@ client.on("messageCreate", async message => {
                     );
                 }
 
-                vc.ownerId = target.id;
+                vc.ownerId =
+                    target.id;
 
                 await voiceChannel.permissionOverwrites.edit(
                     message.author.id,
@@ -1045,9 +1384,9 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // VC STFU
-            // ==============================================
+            // ----------------------------------------------
+            // STFU
+            // ----------------------------------------------
 
             if (sub === "stfu") {
                 if (!isOwner) {
@@ -1072,9 +1411,7 @@ client.on("messageCreate", async message => {
                     );
                 }
 
-                if (
-                    isGod(target)
-                ) {
+                if (isGod(target)) {
                     return sendBox(
                         message,
                         "VC+",
@@ -1082,7 +1419,9 @@ client.on("messageCreate", async message => {
                     );
                 }
 
-                vc.stfu.add(target.id);
+                vc.stfu.add(
+                    target.id
+                );
 
                 await target.voice.setMute(
                     true,
@@ -1096,9 +1435,9 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // VC UNSTFU
-            // ==============================================
+            // ----------------------------------------------
+            // UNSTFU
+            // ----------------------------------------------
 
             if (sub === "unstfu") {
                 if (!isOwner) {
@@ -1123,7 +1462,9 @@ client.on("messageCreate", async message => {
                     );
                 }
 
-                vc.stfu.delete(target.id);
+                vc.stfu.delete(
+                    target.id
+                );
 
                 await target.voice.setMute(
                     false,
@@ -1137,9 +1478,7 @@ client.on("messageCreate", async message => {
                 );
             }
 
-            // ==============================================
-            // NO DRAGALL
-            // ==============================================
+            // No dragall command
 
             return sendBox(
                 message,
@@ -1153,9 +1492,7 @@ client.on("messageCreate", async message => {
         // ==================================================
 
         if (command === "rank") {
-            if (
-                !isFounder(message.member)
-            ) {
+            if (!isFounder(member)) {
                 return sendBox(
                     message,
                     "Rank",
@@ -1209,9 +1546,7 @@ client.on("messageCreate", async message => {
         // ==================================================
 
         if (command === "godmode") {
-            if (
-                !isFounder(message.member)
-            ) {
+            if (!isFounder(member)) {
                 return sendBox(
                     message,
                     "Godmode",
@@ -1272,15 +1607,15 @@ client.on("messageCreate", async message => {
         }
 
         // ==================================================
-        // SERVER BAN
+        // BAN
         // ==================================================
 
         if (command === "ban") {
             if (
-                !message.member.permissions.has(
+                !member.permissions.has(
                     PermissionFlagsBits.BanMembers
                 ) &&
-                !isFounder(message.member)
+                !isFounder(member)
             ) {
                 return sendBox(
                     message,
@@ -1305,7 +1640,7 @@ client.on("messageCreate", async message => {
 
             if (
                 !canModerate(
-                    message.member,
+                    member,
                     target
                 )
             ) {
@@ -1337,10 +1672,10 @@ client.on("messageCreate", async message => {
 
         if (command === "kick") {
             if (
-                !message.member.permissions.has(
+                !member.permissions.has(
                     PermissionFlagsBits.KickMembers
                 ) &&
-                !isFounder(message.member)
+                !isFounder(member)
             ) {
                 return sendBox(
                     message,
@@ -1365,7 +1700,7 @@ client.on("messageCreate", async message => {
 
             if (
                 !canModerate(
-                    message.member,
+                    member,
                     target
                 )
             ) {
@@ -1397,10 +1732,10 @@ client.on("messageCreate", async message => {
 
         if (command === "timeout") {
             if (
-                !message.member.permissions.has(
+                !member.permissions.has(
                     PermissionFlagsBits.ModerateMembers
                 ) &&
-                !isFounder(message.member)
+                !isFounder(member)
             ) {
                 return sendBox(
                     message,
@@ -1433,7 +1768,7 @@ client.on("messageCreate", async message => {
 
             if (
                 !canModerate(
-                    message.member,
+                    member,
                     target
                 )
             ) {
@@ -1462,10 +1797,10 @@ client.on("messageCreate", async message => {
 
         if (command === "untimeout") {
             if (
-                !message.member.permissions.has(
+                !member.permissions.has(
                     PermissionFlagsBits.ModerateMembers
                 ) &&
-                !isFounder(message.member)
+                !isFounder(member)
             ) {
                 return sendBox(
                     message,
@@ -1505,9 +1840,7 @@ client.on("messageCreate", async message => {
         // ==================================================
 
         if (command === "foreverban") {
-            if (
-                !isFounder(message.member)
-            ) {
+            if (!isFounder(member)) {
                 return sendBox(
                     message,
                     "Forever Ban",
@@ -1677,7 +2010,7 @@ client.on(
             }
 
             // ----------------------------------------------
-            // DELETE EMPTY PERSONAL VC
+            // DELETE EMPTY VC
             // ----------------------------------------------
 
             if (oldState.channelId) {
@@ -1851,7 +2184,7 @@ async function punishNuker(
 }
 
 // ======================================================
-// CHANNEL CREATE ANTI-NUKE
+// CHANNEL CREATE PROTECTION
 // ======================================================
 
 client.on(
@@ -1860,7 +2193,6 @@ client.on(
         try {
             if (!channel.guild) return;
 
-            // VC+ is currently creating its own channels.
             if (
                 vcPlusCreatingChannels.has(
                     channel.guild.id
@@ -1878,9 +2210,7 @@ client.on(
                     channel.guild.id
                 );
 
-            if (
-                !data.protection.enabled
-            ) {
+            if (!data.protection.enabled) {
                 return;
             }
 
@@ -1915,26 +2245,21 @@ client.on(
                     executor.id
                 );
 
+            await channel.delete(
+                "VC+ unauthorized channel creation"
+            ).catch(() => {});
+
             if (
                 count >=
                 data.protection.maxActions
             ) {
-                await channel.delete(
-                    "VC+ anti-nuke"
-                ).catch(() => {});
-
                 await punishNuker(
                     channel.guild,
                     executor.id,
                     "VC+ anti-nuke protection"
                 );
-
-                return;
             }
 
-            await channel.delete(
-                "VC+ unauthorized channel creation"
-            ).catch(() => {});
         } catch (error) {
             console.error(
                 "[VC+] Channel create protection error:",
@@ -1945,7 +2270,7 @@ client.on(
 );
 
 // ======================================================
-// CHANNEL DELETE ANTI-NUKE
+// CHANNEL DELETE PROTECTION
 // ======================================================
 
 client.on(
@@ -1959,9 +2284,7 @@ client.on(
                     channel.guild.id
                 );
 
-            if (
-                !data.protection.enabled
-            ) {
+            if (!data.protection.enabled) {
                 return;
             }
 
@@ -2001,6 +2324,7 @@ client.on(
                 executor.id,
                 `VC+ unauthorized channel deletion (${count})`
             );
+
         } catch (error) {
             console.error(
                 "[VC+] Channel delete protection error:",
@@ -2011,7 +2335,7 @@ client.on(
 );
 
 // ======================================================
-// ROLE CREATE ANTI-NUKE
+// ROLE CREATE PROTECTION
 // ======================================================
 
 client.on(
@@ -2023,9 +2347,7 @@ client.on(
                     role.guild.id
                 );
 
-            if (
-                !data.protection.enabled
-            ) {
+            if (!data.protection.enabled) {
                 return;
             }
 
@@ -2074,6 +2396,7 @@ client.on(
                     "VC+ anti-nuke protection"
                 );
             }
+
         } catch (error) {
             console.error(
                 "[VC+] Role create protection error:",
@@ -2084,7 +2407,7 @@ client.on(
 );
 
 // ======================================================
-// ROLE DELETE ANTI-NUKE
+// ROLE DELETE PROTECTION
 // ======================================================
 
 client.on(
@@ -2096,9 +2419,7 @@ client.on(
                     role.guild.id
                 );
 
-            if (
-                !data.protection.enabled
-            ) {
+            if (!data.protection.enabled) {
                 return;
             }
 
@@ -2143,6 +2464,7 @@ client.on(
                     "VC+ anti-nuke protection"
                 );
             }
+
         } catch (error) {
             console.error(
                 "[VC+] Role delete protection error:",
