@@ -5,7 +5,12 @@ import {
     PermissionFlagsBits,
     ChannelType,
     EmbedBuilder,
-    ActivityType
+    ActivityType,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    StringSelectMenuBuilder,
+    AuditLogEvent
 } from "discord.js";
 
 import fs from "node:fs";
@@ -13,11 +18,22 @@ import path from "node:path";
 
 // ============================================================
 // VC+
-// Robust single-file Discord bot
+// SAFE / ANTI-NUKE / PERSONAL VC SYSTEM
 // ============================================================
 
 const PREFIX = "-";
 const BOT_NAME = "vc+";
+
+// Pink / black theme
+const COLORS = {
+    pink: 0xff4fa3,
+    darkPink: 0xd93688,
+    black: 0x111111,
+    success: 0x57f287,
+    error: 0xed4245,
+    warning: 0xfee75c,
+    info: 0x5865f2
+};
 
 // ============================================================
 // CLIENT
@@ -48,63 +64,121 @@ const dataDir = path.join(process.cwd(), "data");
 const dbFile = path.join(dataDir, "vcplus.json");
 
 if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
+    fs.mkdirSync(dataDir, {
+        recursive: true
+    });
 }
 
 let db = {
     guilds: {}
 };
 
+let saveTimer = null;
+
+function normalizeDatabase() {
+    if (!db || typeof db !== "object") {
+        db = {};
+    }
+
+    if (!db.guilds || typeof db.guilds !== "object") {
+        db.guilds = {};
+    }
+}
+
 function loadDB() {
     try {
         if (!fs.existsSync(dbFile)) {
+            normalizeDatabase();
             saveDB();
             return;
         }
 
-        const raw = fs.readFileSync(dbFile, "utf8");
+        const raw = fs.readFileSync(
+            dbFile,
+            "utf8"
+        );
 
         if (!raw.trim()) {
-            db = { guilds: {} };
+            db = {
+                guilds: {}
+            };
+
             saveDB();
             return;
         }
 
         const parsed = JSON.parse(raw);
 
-        if (!parsed || typeof parsed !== "object") {
-            db = { guilds: {} };
+        if (
+            !parsed ||
+            typeof parsed !== "object"
+        ) {
+            db = {
+                guilds: {}
+            };
         } else {
             db = parsed;
-
-            if (!db.guilds || typeof db.guilds !== "object") {
-                db.guilds = {};
-            }
         }
+
+        normalizeDatabase();
+
     } catch (error) {
-        console.error("[DATABASE LOAD]", error);
-        db = { guilds: {} };
+        console.error(
+            "[DATABASE LOAD]",
+            error
+        );
+
+        db = {
+            guilds: {}
+        };
     }
 }
 
 function saveDB() {
     try {
+        normalizeDatabase();
+
+        const tempFile =
+            `${dbFile}.tmp`;
+
         fs.writeFileSync(
-            dbFile,
-            JSON.stringify(db, null, 2),
+            tempFile,
+            JSON.stringify(
+                db,
+                null,
+                2
+            ),
             "utf8"
         );
+
+        fs.renameSync(
+            tempFile,
+            dbFile
+        );
+
     } catch (error) {
-        console.error("[DATABASE SAVE]", error);
+        console.error(
+            "[DATABASE SAVE]",
+            error
+        );
     }
+}
+
+function queueSave() {
+    if (saveTimer) {
+        return;
+    }
+
+    saveTimer = setTimeout(() => {
+        saveTimer = null;
+        saveDB();
+    }, 500);
 }
 
 loadDB();
 
 // ============================================================
 // RANKS
-// Bot-only ranks.
-// NO DISCORD ROLES ARE CREATED.
 // ============================================================
 
 const RANKS = [
@@ -133,36 +207,31 @@ const RANK_LEVEL = {
     founder: 10
 };
 
+// ============================================================
+// GUILD DATA
+// ============================================================
+
 function guildData(guildId) {
     if (!db.guilds[guildId]) {
-        db.guilds[guildId] = {
-            ranks: {},
-            foreverBanned: [],
-            vouches: {},
-            vouchLimit: 1,
-
-            godmode: {},
-
-            jtc: {
-                categoryId: null,
-                triggerId: null
-            }
-        };
+        db.guilds[guildId] = {};
     }
 
-    const data = db.guilds[guildId];
+    const g = db.guilds[guildId];
 
-    data.ranks ??= {};
-    data.foreverBanned ??= [];
-    data.vouches ??= {};
-    data.vouchLimit ??= 1;
-    data.godmode ??= {};
+    g.ranks ??= {};
+    g.foreverBanned ??= [];
+    g.vouches ??= {};
+    g.vouchLimit ??= 1;
+    g.godmode ??= {};
 
-    data.jtc ??= {};
-    data.jtc.categoryId ??= null;
-    data.jtc.triggerId ??= null;
+    g.jtc ??= {};
+    g.jtc.categoryId ??= null;
+    g.jtc.triggerId ??= null;
 
-    return data;
+    g.security ??= {};
+    g.security.enabled ??= true;
+
+    return g;
 }
 
 // ============================================================
@@ -170,44 +239,78 @@ function guildData(guildId) {
 // ============================================================
 
 function getRank(guild, userId) {
-    const data = guildData(guild.id);
-
-    return data.ranks[userId] || "member";
-}
-
-function rankLevel(guild, userId) {
-    return RANK_LEVEL[getRank(guild, userId)] || 1;
-}
-
-function isFounder(message) {
-    if (!message.guild) return false;
+    const g = guildData(
+        guild.id
+    );
 
     return (
-        message.guild.ownerId === message.author.id ||
-        getRank(message.guild, message.author.id) === "founder"
+        g.ranks[userId] ||
+        "member"
     );
 }
 
-function isGod(message) {
-    if (!message.guild) return false;
-
+function rankLevel(
+    guild,
+    userId
+) {
     return (
-        isFounder(message) ||
-        getRank(message.guild, message.author.id) === "god"
+        RANK_LEVEL[
+            getRank(
+                guild,
+                userId
+            )
+        ] || 1
     );
 }
 
-function isProtected(guild, userId) {
-    const rank = getRank(guild, userId);
+function isFounderFromId(
+    guild,
+    userId
+) {
+    return (
+        guild.ownerId === userId ||
+        getRank(
+            guild,
+            userId
+        ) === "founder"
+    );
+}
+
+function isGodFromId(
+    guild,
+    userId
+) {
+    return (
+        isFounderFromId(
+            guild,
+            userId
+        ) ||
+        getRank(
+            guild,
+            userId
+        ) === "god"
+    );
+}
+
+function isProtected(
+    guild,
+    userId
+) {
+    const rank =
+        getRank(
+            guild,
+            userId
+        );
 
     return (
         rank === "founder" ||
-        rank === "god"
+        rank === "god" ||
+        guild.ownerId === userId
     );
 }
 
 // ============================================================
-// EMBED / BLEED-STYLE BOX
+// EMBEDS
 // ============================================================
 
 function box(
@@ -215,29 +318,36 @@ function box(
     description,
     type = "info"
 ) {
-    const colors = {
-        info: 0x5865f2,
-        success: 0x57f287,
-        error: 0xed4245,
-        warning: 0xfee75c
-    };
+    const color =
+        COLORS[type] ??
+        COLORS.pink;
 
     return new EmbedBuilder()
-        .setTitle(`${BOT_NAME} • ${title}`)
-        .setDescription(description)
-        .setColor(
-            colors[type] ?? colors.info
+        .setColor(color)
+        .setTitle(
+            `♡ ${BOT_NAME} • ${title}`
         )
+        .setDescription(
+            description
+        )
+        .setFooter({
+            text:
+                "VC+ • ghetto comm control"
+        })
         .setTimestamp();
 }
 
-async function sendBox(
+async function safeReply(
     message,
     title,
     description,
     type = "info"
 ) {
     try {
+        if (!message) {
+            return null;
+        }
+
         return await message.reply({
             embeds: [
                 box(
@@ -245,21 +355,34 @@ async function sendBox(
                     description,
                     type
                 )
-            ]
+            ],
+            allowedMentions: {
+                parse: []
+            }
         });
+
     } catch (error) {
-        console.error("[SEND BOX]", error);
+        console.error(
+            "[REPLY ERROR]",
+            error
+        );
+
         return null;
     }
 }
 
 // ============================================================
-// SAFE MEMBER FETCH
+// TARGET
 // ============================================================
 
-async function getTarget(message, value) {
+async function getTarget(
+    message,
+    value
+) {
     try {
-        if (!value) return null;
+        if (!value) {
+            return null;
+        }
 
         const mentioned =
             message.mentions.members.first();
@@ -270,9 +393,14 @@ async function getTarget(message, value) {
 
         const id =
             String(value)
-                .replace(/[<@!>]/g, "");
+                .replace(
+                    /[<@!>]/g,
+                    ""
+                );
 
-        if (!/^\d{15,25}$/.test(id)) {
+        if (
+            !/^\d{15,25}$/.test(id)
+        ) {
             return null;
         }
 
@@ -281,7 +409,11 @@ async function getTarget(message, value) {
             .catch(() => null);
 
     } catch (error) {
-        console.error("[GET TARGET]", error);
+        console.error(
+            "[GET TARGET]",
+            error
+        );
+
         return null;
     }
 }
@@ -290,9 +422,17 @@ async function getTarget(message, value) {
 // MODERATION SAFETY
 // ============================================================
 
-function canModerate(message, target) {
+function canModerate(
+    message,
+    target
+) {
     try {
-        if (!target) return false;
+        if (
+            !message.guild ||
+            !target
+        ) {
+            return false;
+        }
 
         if (
             target.id ===
@@ -308,14 +448,16 @@ function canModerate(message, target) {
             return false;
         }
 
-        // Founder/God cannot be targeted by lower ranks.
         if (
             isProtected(
                 message.guild,
                 target.id
             )
         ) {
-            return isGod(message);
+            return isGodFromId(
+                message.guild,
+                message.author.id
+            );
         }
 
         return (
@@ -335,18 +477,16 @@ function canModerate(message, target) {
 }
 
 // ============================================================
-// TEMPORARY VC MEMORY
+// TEMP VC MEMORY
 // ============================================================
 
-const temporaryVCs = new Map();
+const temporaryVCs =
+    new Map();
 
 /*
-temporaryVCs:
-
 channelId -> {
     guildId,
     ownerId,
-    interfaceId,
     banned: Set,
     rejected: Set,
     permitted: Set,
@@ -356,18 +496,25 @@ channelId -> {
 */
 
 // ============================================================
-// FIND USER'S VC
+// FIND VC
 // ============================================================
 
-function getOwnedVC(member) {
+function getOwnedVC(
+    member
+) {
     try {
-        if (!member?.voice?.channelId) {
+        if (
+            !member?.voice?.channelId
+        ) {
             return null;
         }
 
+        const channelId =
+            member.voice.channelId;
+
         const data =
             temporaryVCs.get(
-                member.voice.channelId
+                channelId
             );
 
         if (!data) {
@@ -376,7 +523,7 @@ function getOwnedVC(member) {
 
         const channel =
             member.guild.channels.cache.get(
-                member.voice.channelId
+                channelId
             );
 
         if (!channel) {
@@ -389,21 +536,30 @@ function getOwnedVC(member) {
         };
 
     } catch (error) {
-        console.error("[GET OWNED VC]", error);
+        console.error(
+            "[GET OWNED VC]",
+            error
+        );
+
         return null;
     }
 }
 
-// ============================================================
-// VC CONTROL ACCESS
-// ============================================================
-
-function canControlVC(message, data) {
-    if (!data) return false;
+function canControlVC(
+    message,
+    data
+) {
+    if (!data) {
+        return false;
+    }
 
     return (
-        data.ownerId === message.author.id ||
-        isGod(message)
+        data.ownerId ===
+            message.author.id ||
+        isGodFromId(
+            message.guild,
+            message.author.id
+        )
     );
 }
 
@@ -411,117 +567,190 @@ function canControlVC(message, data) {
 // VC INTERFACE
 // ============================================================
 
-async function createVCInterface(
+function interfaceButtons() {
+    return new ActionRowBuilder()
+        .addComponents(
+            new ButtonBuilder()
+                .setCustomId(
+                    "vcplus_lock"
+                )
+                .setLabel("LOCK")
+                .setEmoji("🔒")
+                .setStyle(
+                    ButtonStyle.Danger
+                ),
+
+            new ButtonBuilder()
+                .setCustomId(
+                    "vcplus_unlock"
+                )
+                .setLabel("UNLOCK")
+                .setEmoji("🔓")
+                .setStyle(
+                    ButtonStyle.Success
+                ),
+
+            new ButtonBuilder()
+                .setCustomId(
+                    "vcplus_refresh"
+                )
+                .setLabel("REFRESH")
+                .setEmoji("↻")
+                .setStyle(
+                    ButtonStyle.Secondary
+                )
+        );
+}
+
+function interfaceSelect(
+    channel
+) {
+    const members =
+        [...channel.members.values()]
+            .filter(
+                member =>
+                    member.id !==
+                    channel.guild.ownerId
+            )
+            .filter(
+                member =>
+                    !isProtected(
+                        channel.guild,
+                        member.id
+                    )
+            )
+            .slice(0, 25);
+
+    if (!members.length) {
+        return null;
+    }
+
+    const menu =
+        new StringSelectMenuBuilder()
+            .setCustomId(
+                "vcplus_stfu_select"
+            )
+            .setPlaceholder(
+                "Select someone to STFU"
+            )
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(
+                members.map(
+                    member => ({
+                        label:
+                            member.user.username
+                                .slice(0, 100),
+                        value:
+                            member.id,
+                        description:
+                            "Lock this member muted"
+                    })
+                )
+            );
+
+    return new ActionRowBuilder()
+        .addComponents(
+            menu
+        );
+}
+
+async function sendVCInterface(
     voiceChannel,
     data
 ) {
     try {
-        const guild =
-            voiceChannel.guild;
-
-        let textChannel = null;
-
-        if (data.interfaceId) {
-            textChannel =
-                guild.channels.cache.get(
-                    data.interfaceId
-                );
+        if (
+            !voiceChannel ||
+            !data
+        ) {
+            return null;
         }
 
-        if (!textChannel) {
-            textChannel =
-                guild.channels.cache.find(
-                    channel =>
-                        channel.type ===
-                            ChannelType.GuildText &&
-                        channel.name ===
-                            "vc-chat" &&
-                        channel.parentId ===
-                            voiceChannel.parentId
-                );
+        if (
+            typeof voiceChannel.send !==
+            "function"
+        ) {
+            return null;
         }
 
-        if (!textChannel) {
-            textChannel =
-                await guild.channels.create({
-                    name: "vc-chat",
-                    type: ChannelType.GuildText,
-                    parent:
-                        voiceChannel.parentId ??
-                        null,
+        const lines = [
+            "### ♡ VC+ CONTROL PANEL",
+            "",
+            `**OWNER** <@${data.ownerId}>`,
+            "",
+            "━━━━━━━━━━━━━━━━━━━━",
+            "",
+            "**VC CONTROLS**",
+            "`-vc kick @user`",
+            "`-vc ban @user`",
+            "`-vc reject @user`",
+            "`-vc permit @user`",
+            "`-vc lock`",
+            "`-vc unlock`",
+            "`-vc limit 10`",
+            "`-vc rename name`",
+            "`-vc transfer @user`",
+            "",
+            "**VOICE CONTROL**",
+            "`-vc stfu @user`",
+            "`-vc unstfu @user`",
+            "`-vc dragall`",
+            "",
+            "━━━━━━━━━━━━━━━━━━━━",
+            "",
+            "**PROTECTION**",
+            "♡ Founder + God cannot be VC-STFU'd.",
+            "♡ Godmode protects against server voice mute.",
+            "♡ Founder is always protected.",
+            "",
+            "Use the buttons below for quick controls."
+        ];
 
-                    permissionOverwrites: [
-                        {
-                            id:
-                                guild.roles.everyone.id,
+        const components = [
+            interfaceButtons()
+        ];
 
-                            allow: [
-                                PermissionFlagsBits.ViewChannel,
-                                PermissionFlagsBits.ReadMessageHistory
-                            ],
+        const select =
+            interfaceSelect(
+                voiceChannel
+            );
 
-                            deny: [
-                                PermissionFlagsBits.SendMessages
-                            ]
-                        },
-                        {
-                            id: data.ownerId,
-
-                            allow: [
-                                PermissionFlagsBits.ViewChannel,
-                                PermissionFlagsBits.SendMessages,
-                                PermissionFlagsBits.ReadMessageHistory
-                            ]
-                        }
-                    ],
-
-                    reason:
-                        "VC+ temporary VC interface"
-                });
+        if (select) {
+            components.push(
+                select
+            );
         }
 
-        data.interfaceId =
-            textChannel.id;
-
-        await textChannel
-            .send({
-                embeds: [
-                    box(
-                        "Voice Control",
-                        [
-                            `**Owner:** <@${data.ownerId}>`,
-                            "",
-                            "**VC COMMANDS**",
-                            "`-vc kick @user`",
-                            "`-vc ban @user`",
-                            "`-vc reject @user`",
-                            "`-vc permit @user`",
-                            "`-vc lock`",
-                            "`-vc unlock`",
-                            "`-vc limit 10`",
-                            "`-vc rename name`",
-                            "`-vc transfer @user`",
-                            "`-vc stfu @user`",
-                            "`-vc unstfu @user`",
-                            "`-vc dragall`",
-                            "`-interface`",
-                            "",
-                            "**Protection**",
-                            "Founder and God are protected from VC STFU.",
-                            "STFU remains active until `-vc unstfu` is used."
-                        ].join("\n")
+        return await voiceChannel.send({
+            embeds: [
+                new EmbedBuilder()
+                    .setColor(
+                        COLORS.pink
                     )
-                ]
-            })
-            .catch(() => {});
-
-        saveDB();
-
-        return textChannel;
+                    .setTitle(
+                        "♡ VC+ // PERSONAL CALL"
+                    )
+                    .setDescription(
+                        lines.join("\n")
+                    )
+                    .setThumbnail(
+                        client.user?.displayAvatarURL?.({
+                            size: 128
+                        }) ?? null
+                    )
+                    .setFooter({
+                        text:
+                            "VC+ • private call control"
+                    })
+                    .setTimestamp()
+            ],
+            components
+        });
 
     } catch (error) {
         console.error(
-            "[CREATE VC INTERFACE]",
+            "[VC INTERFACE]",
             error
         );
 
@@ -530,26 +759,30 @@ async function createVCInterface(
 }
 
 // ============================================================
-// SETUP JOIN TO CREATE
+// SETUP
 // ============================================================
 
-async function setupVC(message) {
+async function setupVC(
+    message
+) {
     try {
         if (
             !message.member.permissions.has(
                 PermissionFlagsBits.ManageChannels
             )
         ) {
-            return sendBox(
+            return safeReply(
                 message,
-                "Permission denied",
-                "You need **Manage Channels** to set up Join to Create.",
+                "PERMISSION DENIED",
+                "You need **Manage Channels** to set up VC+.",
                 "error"
             );
         }
 
         const g =
-            guildData(message.guild.id);
+            guildData(
+                message.guild.id
+            );
 
         if (
             g.jtc.triggerId &&
@@ -557,15 +790,10 @@ async function setupVC(message) {
                 g.jtc.triggerId
             )
         ) {
-            const existing =
-                message.guild.channels.cache.get(
-                    g.jtc.triggerId
-                );
-
-            return sendBox(
+            return safeReply(
                 message,
-                "Already setup",
-                `Join to Create is already active in <#${existing.id}>.`,
+                "ALREADY ACTIVE",
+                `Join <#${g.jtc.triggerId}> to create your personal VC.`,
                 "warning"
             );
         }
@@ -581,23 +809,27 @@ async function setupVC(message) {
                 );
         }
 
-        if (
-            !category
-        ) {
+        if (!category) {
             category =
                 await message.guild.channels.create({
-                    name: "VC+",
-                    type: ChannelType.GuildCategory,
-                    reason: "VC+ setup"
+                    name: "♡ VC+",
+                    type:
+                        ChannelType.GuildCategory,
+                    reason:
+                        "VC+ setup"
                 });
         }
 
         const trigger =
             await message.guild.channels.create({
-                name: "Join to Create",
-                type: ChannelType.GuildVoice,
-                parent: category.id,
-                reason: "VC+ Join to Create"
+                name:
+                    "♡・join-to-create",
+                type:
+                    ChannelType.GuildVoice,
+                parent:
+                    category.id,
+                reason:
+                    "VC+ Join to Create"
             });
 
         g.jtc.categoryId =
@@ -606,20 +838,18 @@ async function setupVC(message) {
         g.jtc.triggerId =
             trigger.id;
 
-        saveDB();
+        queueSave();
 
-        return sendBox(
+        return safeReply(
             message,
-            "Setup complete",
+            "VC+ ONLINE",
             [
-                `Join <#${trigger.id}> to create your personal VC.`,
+                `Join <#${trigger.id}> to create your personal call.`,
                 "",
-                "Your VC will be named:",
-                `**yourname VC**`,
+                "**NO EXTRA CHAT CHANNELS.**",
+                "Your control interface appears directly inside your VC's built-in chat.",
                 "",
-                "A `vc-chat` interface will automatically be created beside your VC.",
-                "",
-                "Use `-vc` to view VC commands."
+                "Use `-vc` for commands."
             ].join("\n"),
             "success"
         );
@@ -630,10 +860,10 @@ async function setupVC(message) {
             error
         );
 
-        return sendBox(
+        return safeReply(
             message,
-            "Setup failed",
-            "I couldn't create the Join to Create system. Check that the bot has **Manage Channels** and **Move Members**.",
+            "SETUP FAILED",
+            "VC+ could not finish setup. Check the bot's **Manage Channels** permission.",
             "error"
         );
     }
@@ -648,7 +878,10 @@ async function createPersonalVC(
     trigger
 ) {
     try {
-        if (!member || !trigger) {
+        if (
+            !member ||
+            !trigger
+        ) {
             return null;
         }
 
@@ -656,7 +889,9 @@ async function createPersonalVC(
             member.guild;
 
         const g =
-            guildData(guild.id);
+            guildData(
+                guild.id
+            );
 
         if (
             trigger.id !==
@@ -665,7 +900,7 @@ async function createPersonalVC(
             return null;
         }
 
-        // Prevent duplicate VCs.
+        // Existing VC
         for (
             const [
                 channelId,
@@ -673,8 +908,10 @@ async function createPersonalVC(
             ] of temporaryVCs
         ) {
             if (
-                data.guildId === guild.id &&
-                data.ownerId === member.id
+                data.guildId ===
+                    guild.id &&
+                data.ownerId ===
+                    member.id
             ) {
                 const existing =
                     guild.channels.cache.get(
@@ -685,7 +922,7 @@ async function createPersonalVC(
                     await member.voice
                         .setChannel(
                             existing,
-                            "VC+ existing personal VC"
+                            "VC+ existing VC"
                         )
                         .catch(() => {});
 
@@ -700,29 +937,30 @@ async function createPersonalVC(
 
         const safeName =
             `${member.user.username} VC`
-                .replace(/[^\w\s\-+]/g, "")
-                .slice(0, 100)
+                .replace(
+                    /[^\w\s\-+♡]/g,
+                    ""
+                )
+                .slice(0, 95)
                 .trim() ||
             "Personal VC";
 
         const channel =
             await guild.channels.create({
-                name: safeName,
-                type: ChannelType.GuildVoice,
+                name:
+                    `♡ ${safeName}`,
+                type:
+                    ChannelType.GuildVoice,
                 parent:
                     trigger.parentId ??
                     null,
-
                 userLimit: 0,
-
                 reason:
-                    "VC+ Join to Create",
-
+                    "VC+ personal VC",
                 permissionOverwrites: [
                     {
                         id:
                             guild.roles.everyone.id,
-
                         allow: [
                             PermissionFlagsBits.ViewChannel,
                             PermissionFlagsBits.Connect
@@ -732,16 +970,20 @@ async function createPersonalVC(
             });
 
         const data = {
-            guildId: guild.id,
-            ownerId: member.id,
-            interfaceId: null,
-
-            banned: new Set(),
-            rejected: new Set(),
-            permitted: new Set(),
-            stfu: new Set(),
-
-            locked: false
+            guildId:
+                guild.id,
+            ownerId:
+                member.id,
+            banned:
+                new Set(),
+            rejected:
+                new Set(),
+            permitted:
+                new Set(),
+            stfu:
+                new Set(),
+            locked:
+                false
         };
 
         temporaryVCs.set(
@@ -749,22 +991,25 @@ async function createPersonalVC(
             data
         );
 
-        await createVCInterface(
-            channel,
-            data
-        );
-
+        // Move first.
         await member.voice
             .setChannel(
                 channel,
-                "VC+ Join to Create"
+                "VC+ personal VC"
             )
             .catch(error => {
                 console.error(
-                    "[MOVE TO VC]",
+                    "[MOVE TO PERSONAL VC]",
                     error
                 );
             });
+
+        // Then put the interface INSIDE
+        // the voice channel's chat.
+        await sendVCInterface(
+            channel,
+            data
+        );
 
         return channel;
 
@@ -779,28 +1024,40 @@ async function createPersonalVC(
 }
 
 // ============================================================
-// VC COMMAND HELP
+// VC HELP
 // ============================================================
 
-function vcHelp(message) {
-    return sendBox(
+async function vcHelp(
+    message
+) {
+    return safeReply(
         message,
-        "VC Commands",
+        "VC+ COMMANDS",
         [
-            "`-vc setup` — setup Join to Create",
-            "`-vc kick @user` — remove someone",
-            "`-vc ban @user` — VC-ban someone",
-            "`-vc reject @user` — reject someone",
-            "`-vc permit @user` — allow someone",
-            "`-vc lock` — lock your VC",
-            "`-vc unlock` — unlock your VC",
-            "`-vc limit 10` — set VC limit",
-            "`-vc rename name` — rename your VC",
-            "`-vc transfer @user` — transfer ownership",
-            "`-vc stfu @user` — keep someone muted",
-            "`-vc unstfu @user` — remove STFU",
-            "`-vc dragall` — Founder-only mass drag",
-            "`-interface` — reopen VC interface"
+            "**SETUP**",
+            "`-vc setup`",
+            "",
+            "**CONTROL**",
+            "`-vc kick @user`",
+            "`-vc ban @user`",
+            "`-vc reject @user`",
+            "`-vc permit @user`",
+            "`-vc lock`",
+            "`-vc unlock`",
+            "`-vc limit 10`",
+            "`-vc rename name`",
+            "`-vc transfer @user`",
+            "",
+            "**VOICE**",
+            "`-vc stfu @user`",
+            "`-vc unstfu @user`",
+            "`-vc dragall`",
+            "",
+            "**INTERFACE**",
+            "`-interface`",
+            "",
+            "**FOUNDER ONLY**",
+            "`-vc dragall`"
         ].join("\n")
     );
 }
@@ -816,15 +1073,22 @@ async function handleVC(
     try {
         const sub =
             String(
-                args.shift() || ""
+                args.shift() ||
+                ""
             ).toLowerCase();
 
         if (!sub) {
-            return vcHelp(message);
+            return vcHelp(
+                message
+            );
         }
 
-        if (sub === "setup") {
-            return setupVC(message);
+        if (
+            sub === "setup"
+        ) {
+            return setupVC(
+                message
+            );
         }
 
         const owned =
@@ -833,9 +1097,9 @@ async function handleVC(
             );
 
         if (!owned) {
-            return sendBox(
+            return safeReply(
                 message,
-                "No VC",
+                "NO VC",
                 "You must be inside a temporary VC+ call.",
                 "error"
             );
@@ -852,19 +1116,21 @@ async function handleVC(
                 data
             )
         ) {
-            return sendBox(
+            return safeReply(
                 message,
-                "Access denied",
-                "Only the owner of this call, Founder, or God can control this VC.",
+                "ACCESS DENIED",
+                "Only the VC owner, Founder, or God can control this call.",
                 "error"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // KICK
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "kick") {
+        if (
+            sub === "kick"
+        ) {
             const target =
                 await getTarget(
                     message,
@@ -872,9 +1138,9 @@ async function handleVC(
                 );
 
             if (!target) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "VC Kick",
+                    "VC KICK",
                     "Usage: `-vc kick @user`",
                     "warning"
                 );
@@ -884,9 +1150,9 @@ async function handleVC(
                 target.voice.channelId !==
                 channel.id
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Not in VC",
+                    "NOT IN VC",
                     "That member isn't in this call.",
                     "error"
                 );
@@ -898,10 +1164,10 @@ async function handleVC(
                     target
                 )
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Protected member",
-                    "You cannot VC-kick an equal or higher protected member.",
+                    "PROTECTED",
+                    "You cannot kick an equal or higher protected member.",
                     "error"
                 );
             }
@@ -912,19 +1178,21 @@ async function handleVC(
                 )
                 .catch(() => {});
 
-            return sendBox(
+            return safeReply(
                 message,
-                "Member kicked",
+                "KICKED",
                 `${target} was removed from the call.`,
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // BAN
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "ban") {
+        if (
+            sub === "ban"
+        ) {
             const target =
                 await getTarget(
                     message,
@@ -932,9 +1200,9 @@ async function handleVC(
                 );
 
             if (!target) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "VC Ban",
+                    "VC BAN",
                     "Usage: `-vc ban @user`",
                     "warning"
                 );
@@ -946,9 +1214,9 @@ async function handleVC(
                     target
                 )
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Protected member",
+                    "PROTECTED",
                     "You cannot VC-ban Founder, God, or an equal/higher rank.",
                     "error"
                 );
@@ -969,19 +1237,21 @@ async function handleVC(
                     .catch(() => {});
             }
 
-            return sendBox(
+            return safeReply(
                 message,
-                "Member VC banned",
-                `${target} can no longer join this temporary VC.`,
+                "VC BANNED",
+                `${target} can no longer join this call.`,
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // REJECT
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "reject") {
+        if (
+            sub === "reject"
+        ) {
             const target =
                 await getTarget(
                     message,
@@ -989,9 +1259,9 @@ async function handleVC(
                 );
 
             if (!target) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "VC Reject",
+                    "VC REJECT",
                     "Usage: `-vc reject @user`",
                     "warning"
                 );
@@ -1003,9 +1273,9 @@ async function handleVC(
                     target
                 )
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Protected member",
+                    "PROTECTED",
                     "You cannot reject a protected member.",
                     "error"
                 );
@@ -1026,19 +1296,21 @@ async function handleVC(
                     .catch(() => {});
             }
 
-            return sendBox(
+            return safeReply(
                 message,
-                "Member rejected",
-                `${target} is now rejected from this VC.`,
+                "REJECTED",
+                `${target} is now rejected from this call.`,
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // PERMIT
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "permit") {
+        if (
+            sub === "permit"
+        ) {
             const target =
                 await getTarget(
                     message,
@@ -1046,9 +1318,9 @@ async function handleVC(
                 );
 
             if (!target) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "VC Permit",
+                    "VC PERMIT",
                     "Usage: `-vc permit @user`",
                     "warning"
                 );
@@ -1066,19 +1338,21 @@ async function handleVC(
                 target.id
             );
 
-            return sendBox(
+            return safeReply(
                 message,
-                "Member permitted",
+                "PERMITTED",
                 `${target} is allowed to join this VC.`,
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // LOCK
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "lock") {
+        if (
+            sub === "lock"
+        ) {
             await channel.permissionOverwrites
                 .edit(
                     message.guild.roles.everyone,
@@ -1088,26 +1362,28 @@ async function handleVC(
                 )
                 .catch(error => {
                     console.error(
-                        "[VC LOCK]",
+                        "[LOCK]",
                         error
                     );
                 });
 
             data.locked = true;
 
-            return sendBox(
+            return safeReply(
                 message,
-                "VC locked",
-                "Your call is now locked.",
+                "VC LOCKED",
+                "Nobody new can join this call.",
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // UNLOCK
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "unlock") {
+        if (
+            sub === "unlock"
+        ) {
             await channel.permissionOverwrites
                 .edit(
                     message.guild.roles.everyone,
@@ -1117,37 +1393,43 @@ async function handleVC(
                 )
                 .catch(error => {
                     console.error(
-                        "[VC UNLOCK]",
+                        "[UNLOCK]",
                         error
                     );
                 });
 
             data.locked = false;
 
-            return sendBox(
+            return safeReply(
                 message,
-                "VC unlocked",
-                "Your call is now unlocked.",
+                "VC UNLOCKED",
+                "Your call is open again.",
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // LIMIT
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "limit") {
+        if (
+            sub === "limit"
+        ) {
             const limit =
-                Number(args[0]);
+                Number(
+                    args[0]
+                );
 
             if (
-                !Number.isInteger(limit) ||
+                !Number.isInteger(
+                    limit
+                ) ||
                 limit < 0 ||
                 limit > 99
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Invalid limit",
+                    "INVALID LIMIT",
                     "Choose a number from `0` to `99`.",
                     "error"
                 );
@@ -1159,37 +1441,40 @@ async function handleVC(
                 )
                 .catch(error => {
                     console.error(
-                        "[VC LIMIT]",
+                        "[LIMIT]",
                         error
                     );
                 });
 
-            return sendBox(
+            return safeReply(
                 message,
-                "Limit updated",
-                `VC limit set to **${
+                "LIMIT UPDATED",
+                `VC limit: **${
                     limit === 0
-                        ? "unlimited"
+                        ? "Unlimited"
                         : limit
-                }**.`,
+                }**`,
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // RENAME
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "rename") {
+        if (
+            sub === "rename"
+        ) {
             const name =
-                args.join(" ")
+                args
+                    .join(" ")
                     .trim()
                     .slice(0, 100);
 
             if (!name) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Rename",
+                    "RENAME",
                     "Usage: `-vc rename My VC`",
                     "warning"
                 );
@@ -1201,24 +1486,26 @@ async function handleVC(
                 )
                 .catch(error => {
                     console.error(
-                        "[VC RENAME]",
+                        "[RENAME]",
                         error
                     );
                 });
 
-            return sendBox(
+            return safeReply(
                 message,
-                "VC renamed",
+                "VC RENAMED",
                 `Your VC is now **${name}**.`,
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // TRANSFER
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "transfer") {
+        if (
+            sub === "transfer"
+        ) {
             const target =
                 await getTarget(
                     message,
@@ -1226,9 +1513,9 @@ async function handleVC(
                 );
 
             if (!target) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Transfer",
+                    "TRANSFER",
                     "Usage: `-vc transfer @user`",
                     "warning"
                 );
@@ -1238,10 +1525,10 @@ async function handleVC(
                 target.voice.channelId !==
                 channel.id
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Not in VC",
-                    "The new owner must be inside your VC.",
+                    "NOT IN VC",
+                    "The new owner must be inside the call.",
                     "warning"
                 );
             }
@@ -1252,10 +1539,10 @@ async function handleVC(
                     target.id
                 )
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Protected member",
-                    "That member already has a protected bot rank.",
+                    "PROTECTED",
+                    "That member already has a protected rank.",
                     "warning"
                 );
             }
@@ -1263,24 +1550,26 @@ async function handleVC(
             data.ownerId =
                 target.id;
 
-            await createVCInterface(
+            await sendVCInterface(
                 channel,
                 data
             );
 
-            return sendBox(
+            return safeReply(
                 message,
-                "Ownership transferred",
-                `${target} is now the owner of this VC.`,
+                "OWNERSHIP TRANSFERRED",
+                `${target} is now the owner of this call.`,
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // STFU
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "stfu") {
+        if (
+            sub === "stfu"
+        ) {
             const target =
                 await getTarget(
                     message,
@@ -1288,7 +1577,7 @@ async function handleVC(
                 );
 
             if (!target) {
-                return sendBox(
+                return safeReply(
                     message,
                     "VC STFU",
                     "Usage: `-vc stfu @user`",
@@ -1300,9 +1589,9 @@ async function handleVC(
                 target.id ===
                 message.author.id
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Invalid target",
+                    "INVALID TARGET",
                     "You cannot STFU yourself.",
                     "error"
                 );
@@ -1314,9 +1603,9 @@ async function handleVC(
                     target.id
                 )
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Protected member",
+                    "PROTECTED",
                     "Founder and God are protected from VC STFU.",
                     "error"
                 );
@@ -1326,9 +1615,9 @@ async function handleVC(
                 target.voice.channelId !==
                 channel.id
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Not in VC",
+                    "NOT IN VC",
                     "That member isn't in your call.",
                     "error"
                 );
@@ -1345,30 +1634,29 @@ async function handleVC(
                 )
                 .catch(error => {
                     console.error(
-                        "[VC STFU]",
+                        "[STFU]",
                         error
                     );
                 });
 
-            return sendBox(
+            return safeReply(
                 message,
-                "STFU enabled",
+                "STFU ENABLED",
                 [
-                    `${target} has been muted.`,
+                    `${target} is now muted.`,
                     "",
-                    "They will remain muted until:",
+                    "They stay muted until:",
                     "`-vc unstfu @user`"
                 ].join("\n"),
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // UNSTFU
-        // ====================================================
+        // ----------------------------------------------------
 
         if (
-            sub === "unstfu" ||
             sub === "unstfu"
         ) {
             const target =
@@ -1378,9 +1666,9 @@ async function handleVC(
                 );
 
             if (!target) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "VC Unstfu",
+                    "VC UNSTFU",
                     "Usage: `-vc unstfu @user`",
                     "warning"
                 );
@@ -1397,23 +1685,30 @@ async function handleVC(
                 )
                 .catch(() => {});
 
-            return sendBox(
+            return safeReply(
                 message,
-                "STFU removed",
+                "STFU REMOVED",
                 `${target} is no longer locked muted.`,
                 "success"
             );
         }
 
-        // ====================================================
+        // ----------------------------------------------------
         // DRAGALL
-        // ====================================================
+        // ----------------------------------------------------
 
-        if (sub === "dragall") {
-            if (!isFounder(message)) {
-                return sendBox(
+        if (
+            sub === "dragall"
+        ) {
+            if (
+                !isFounderFromId(
+                    message.guild,
+                    message.author.id
+                )
+            ) {
+                return safeReply(
                     message,
-                    "Access denied",
+                    "FOUNDER ONLY",
                     "`-vc dragall` is **Founder-only**.",
                     "error"
                 );
@@ -1422,8 +1717,8 @@ async function handleVC(
             let moved = 0;
 
             for (
-                const member
-                of message.guild.members.cache.values()
+                const member of
+                message.guild.members.cache.values()
             ) {
                 try {
                     if (
@@ -1458,24 +1753,24 @@ async function handleVC(
 
                 } catch (error) {
                     console.error(
-                        "[DRAGALL MEMBER]",
+                        "[DRAGALL]",
                         error
                     );
                 }
             }
 
-            return sendBox(
+            return safeReply(
                 message,
-                "Dragall complete",
-                `Moved **${moved}** eligible members into your VC.`,
+                "DRAGALL COMPLETE",
+                `Moved **${moved}** eligible members.`,
                 "success"
             );
         }
 
-        return sendBox(
+        return safeReply(
             message,
-            "Unknown VC command",
-            `I don't recognize \`-vc ${sub}\`.\nUse \`-vc\` to see the available commands.`,
+            "UNKNOWN VC COMMAND",
+            `Unknown command: \`-vc ${sub}\`\nUse \`-vc\` for help.`,
             "error"
         );
 
@@ -1485,20 +1780,22 @@ async function handleVC(
             error
         );
 
-        return sendBox(
+        return safeReply(
             message,
-            "Command error",
-            "The VC command failed safely. Check the bot's permissions and try again.",
+            "COMMAND FAILED",
+            "VC+ caught the error and stayed online.",
             "error"
         );
     }
 }
 
 // ============================================================
-// INTERFACE
+// INTERFACE COMMAND
 // ============================================================
 
-async function handleInterface(message) {
+async function handleInterface(
+    message
+) {
     try {
         const owned =
             getOwnedVC(
@@ -1506,33 +1803,33 @@ async function handleInterface(message) {
             );
 
         if (!owned) {
-            return sendBox(
+            return safeReply(
                 message,
-                "No VC",
-                "You must be inside your temporary VC+ call.",
+                "NO VC",
+                "You must be inside your temporary VC.",
                 "error"
             );
         }
 
-        const text =
-            await createVCInterface(
+        const sent =
+            await sendVCInterface(
                 owned.channel,
                 owned.data
             );
 
-        if (!text) {
-            return sendBox(
+        if (!sent) {
+            return safeReply(
                 message,
-                "Interface failed",
-                "I couldn't create the VC interface. Check **Manage Channels** permission.",
+                "INTERFACE FAILED",
+                "I couldn't send the interface into the voice channel chat.",
                 "error"
             );
         }
 
-        return sendBox(
+        return safeReply(
             message,
-            "Interface ready",
-            `Your VC controls are available in <#${text.id}>.`,
+            "INTERFACE READY",
+            "The VC+ control panel was sent into your voice channel's built-in chat.",
             "success"
         );
 
@@ -1542,10 +1839,10 @@ async function handleInterface(message) {
             error
         );
 
-        return sendBox(
+        return safeReply(
             message,
-            "Interface error",
-            "Something went wrong while creating the interface.",
+            "INTERFACE ERROR",
+            "The bot stayed online, but the interface could not be sent.",
             "error"
         );
     }
@@ -1555,24 +1852,27 @@ async function handleInterface(message) {
 // RANK LIST
 // ============================================================
 
-async function rankList(message) {
-    return sendBox(
+async function rankList(
+    message
+) {
+    return safeReply(
         message,
-        "Rank List",
+        "RANK SYSTEM",
         [
-            "**10 • Founder** — Full VC+ access",
-            "**9 • God** — Protected/high access",
-            "**8 • Owner** — Advanced access",
-            "**7 • Co-Owner** — Advanced access",
-            "**6 • Executive** — Staff access",
-            "**5 • Director** — Staff access",
-            "**4 • Admin** — Moderation access",
-            "**3 • Moderator** — Moderation access",
-            "**2 • Staff** — Staff access",
-            "**1 • Member** — Standard access",
+            "**10 • Founder**",
+            "**9 • God**",
+            "**8 • Owner**",
+            "**7 • Co-Owner**",
+            "**6 • Executive**",
+            "**5 • Director**",
+            "**4 • Admin**",
+            "**3 • Moderator**",
+            "**2 • Staff**",
+            "**1 • Member**",
             "",
-            "These ranks are **bot-only**.",
-            "VC+ does not create Discord roles."
+            "Founder/God receive special protection.",
+            "",
+            "These are VC+ bot ranks."
         ].join("\n")
     );
 }
@@ -1585,11 +1885,16 @@ async function rankCommand(
     message,
     args
 ) {
-    if (!isFounder(message)) {
-        return sendBox(
+    if (
+        !isFounderFromId(
+            message.guild,
+            message.author.id
+        )
+    ) {
+        return safeReply(
             message,
-            "Permission denied",
-            "Only **Founder** can manage VC+ ranks.",
+            "FOUNDER ONLY",
+            "Only **Founder** can manage ranks.",
             "error"
         );
     }
@@ -1602,25 +1907,29 @@ async function rankCommand(
 
     const rank =
         String(
-            args[1] || ""
+            args[1] ||
+            ""
         )
             .toLowerCase()
-            .replace(/[^a-z]/g, "");
+            .replace(
+                /[^a-z]/g,
+                ""
+            );
 
     if (
         !target ||
         !RANK_LEVEL[rank]
     ) {
-        return sendBox(
+        return safeReply(
             message,
-            "Rank",
+            "RANK",
             [
-                "Usage:",
                 "`-rank @user rank`",
                 "",
                 RANKS
                     .map(
-                        r => `\`${r}\``
+                        r =>
+                            `\`${r}\``
                     )
                     .join(" • ")
             ].join("\n"),
@@ -1630,186 +1939,30 @@ async function rankCommand(
 
     if (
         target.id ===
-        message.guild.ownerId &&
+            message.guild.ownerId &&
         rank !== "founder"
     ) {
-        return sendBox(
+        return safeReply(
             message,
-            "Protected",
-            "The server owner cannot be assigned a lower bot rank.",
+            "PROTECTED",
+            "The server owner cannot receive a lower rank.",
             "error"
         );
     }
 
     guildData(
         message.guild.id
-    ).ranks[target.id] =
-        rank;
+    ).ranks[
+        target.id
+    ] = rank;
 
-    saveDB();
+    queueSave();
 
-    return sendBox(
+    return safeReply(
         message,
-        "Rank updated",
-        [
-            `${target} is now **${rank}**.`,
-            "",
-            "No Discord role was created.",
-            "This rank only exists inside VC+."
-        ].join("\n"),
+        "RANK UPDATED",
+        `${target} is now **${rank}**.`,
         "success"
-    );
-}
-
-// ============================================================
-// VOUCH
-// ============================================================
-
-async function vouch(
-    message,
-    args
-) {
-    if (!isFounder(message)) {
-        return sendBox(
-            message,
-            "Permission denied",
-            "Only **Founder** can use the vouch system.",
-            "error"
-        );
-    }
-
-    const action =
-        String(
-            args.shift() || ""
-        ).toLowerCase();
-
-    const g =
-        guildData(
-            message.guild.id
-        );
-
-    // --------------------------------------------------------
-    // VOUCH LIMIT
-    // --------------------------------------------------------
-
-    if (
-        action === "limit"
-    ) {
-        const limit =
-            Number(args[0]);
-
-        if (
-            !Number.isInteger(limit) ||
-            limit < 1 ||
-            limit > 100
-        ) {
-            return sendBox(
-                message,
-                "Invalid vouch limit",
-                "Use a number from `1` to `100`.",
-                "warning"
-            );
-        }
-
-        g.vouchLimit =
-            limit;
-
-        saveDB();
-
-        return sendBox(
-            message,
-            "Vouch limit updated",
-            `Promotion requirement is now **${limit} vouch(es)**.`,
-            "success"
-        );
-    }
-
-    // --------------------------------------------------------
-    // VOUCH ADD
-    // --------------------------------------------------------
-
-    if (
-        action === "add"
-    ) {
-        const target =
-            await getTarget(
-                message,
-                args[0]
-            );
-
-        if (!target) {
-            return sendBox(
-                message,
-                "Vouch",
-                "Usage: `-vouch add @user`",
-                "warning"
-            );
-        }
-
-        if (
-            target.id ===
-            message.author.id
-        ) {
-            return sendBox(
-                message,
-                "Invalid target",
-                "You cannot vouch for yourself.",
-                "error"
-            );
-        }
-
-        if (
-            !g.vouches[target.id]
-        ) {
-            g.vouches[target.id] =
-                0;
-        }
-
-        g.vouches[target.id]++;
-
-        const count =
-            g.vouches[target.id];
-
-        let promotion =
-            false;
-
-        if (
-            count >=
-            g.vouchLimit
-        ) {
-            g.ranks[target.id] =
-                "god";
-
-            promotion = true;
-        }
-
-        saveDB();
-
-        return sendBox(
-            message,
-            "Vouch added",
-            [
-                `${target} now has **${count}** vouch(es).`,
-                `Required: **${g.vouchLimit}**`,
-                "",
-                promotion
-                    ? "Requirement reached — user promoted to **God**."
-                    : "The requirement has not been reached yet."
-            ].join("\n"),
-            "success"
-        );
-    }
-
-    return sendBox(
-        message,
-        "Vouch",
-        [
-            "`-vouch add @user`",
-            "`-vouch limit 3`",
-            "",
-            `Current requirement: **${g.vouchLimit}**`
-        ].join("\n"),
-        "warning"
     );
 }
 
@@ -1821,10 +1974,15 @@ async function godmodeCommand(
     message,
     args
 ) {
-    if (!isFounder(message)) {
-        return sendBox(
+    if (
+        !isFounderFromId(
+            message.guild,
+            message.author.id
+        )
+    ) {
+        return safeReply(
             message,
-            "Permission denied",
+            "FOUNDER ONLY",
             "Only **Founder** can manage Godmode.",
             "error"
         );
@@ -1832,7 +1990,8 @@ async function godmodeCommand(
 
     const action =
         String(
-            args.shift() || ""
+            args.shift() ||
+            ""
         ).toLowerCase();
 
     const target =
@@ -1842,12 +2001,13 @@ async function godmodeCommand(
         );
 
     if (
-        action !== "on" &&
-        action !== "off"
+        !["on", "off"].includes(
+            action
+        )
     ) {
-        return sendBox(
+        return safeReply(
             message,
-            "Godmode",
+            "GODMODE",
             [
                 "`-godmode on @user`",
                 "`-godmode off @user`"
@@ -1857,10 +2017,10 @@ async function godmodeCommand(
     }
 
     if (!target) {
-        return sendBox(
+        return safeReply(
             message,
-            "Godmode",
-            "You must specify a member.",
+            "GODMODE",
+            "Specify a member.",
             "warning"
         );
     }
@@ -1871,10 +2031,10 @@ async function godmodeCommand(
             target.id
         )
     ) {
-        return sendBox(
+        return safeReply(
             message,
-            "Protected rank required",
-            "Godmode can only be assigned to a **Founder or God** rank.",
+            "PROTECTED RANK REQUIRED",
+            "Godmode can only be assigned to Founder or God.",
             "error"
         );
     }
@@ -1884,22 +2044,24 @@ async function godmodeCommand(
             message.guild.id
         );
 
-    g.godmode[target.id] =
+    g.godmode[
+        target.id
+    ] =
         action === "on";
 
-    saveDB();
+    queueSave();
 
-    return sendBox(
+    return safeReply(
         message,
-        "Godmode updated",
+        "GODMODE UPDATED",
         [
-            `${target} Godmode is now **${
+            `${target} Godmode: **${
                 action === "on"
                     ? "ON"
                     : "OFF"
-            }**.`,
+            }**`,
             "",
-            "Godmode protects against VC STFU and server voice mutes."
+            "Voice mute protection is active."
         ].join("\n"),
         "success"
     );
@@ -1918,9 +2080,9 @@ async function banCommand(
             PermissionFlagsBits.BanMembers
         )
     ) {
-        return sendBox(
+        return safeReply(
             message,
-            "Permission denied",
+            "PERMISSION DENIED",
             "You need **Ban Members**.",
             "error"
         );
@@ -1932,10 +2094,12 @@ async function banCommand(
             args[0]
         );
 
-    if (!target) {
-        return sendBox(
+    if (
+        !target
+    ) {
+        return safeReply(
             message,
-            "Ban",
+            "BAN",
             "Usage: `-ban @user reason`",
             "warning"
         );
@@ -1947,10 +2111,10 @@ async function banCommand(
             target
         )
     ) {
-        return sendBox(
+        return safeReply(
             message,
-            "Protected member",
-            "You cannot ban the server owner, Founder, God, or an equal/higher rank.",
+            "PROTECTED",
+            "You cannot ban that member.",
             "error"
         );
     }
@@ -1967,23 +2131,24 @@ async function banCommand(
             reason:
                 `VC+ | ${reason}`
         });
+
     } catch (error) {
         console.error(
             "[BAN]",
             error
         );
 
-        return sendBox(
+        return safeReply(
             message,
-            "Ban failed",
-            "Discord rejected the ban. Check the bot's role hierarchy and Ban Members permission.",
+            "BAN FAILED",
+            "Discord rejected the ban. Check role hierarchy.",
             "error"
         );
     }
 
-    return sendBox(
+    return safeReply(
         message,
-        "Member banned",
+        "BANNED",
         [
             `${target.user.tag} was banned.`,
             "",
@@ -2001,11 +2166,16 @@ async function foreverBan(
     message,
     args
 ) {
-    if (!isGod(message)) {
-        return sendBox(
+    if (
+        !isGodFromId(
+            message.guild,
+            message.author.id
+        )
+    ) {
+        return safeReply(
             message,
-            "Permission denied",
-            "`-foreverban` is restricted to **Founder** and **God**.",
+            "PROTECTED COMMAND",
+            "`-foreverban` requires Founder or God.",
             "error"
         );
     }
@@ -2017,9 +2187,9 @@ async function foreverBan(
         );
 
     if (!target) {
-        return sendBox(
+        return safeReply(
             message,
-            "Forever Ban",
+            "FOREVER BAN",
             "Usage: `-foreverban @user`",
             "warning"
         );
@@ -2029,9 +2199,9 @@ async function foreverBan(
         target.id ===
         message.guild.ownerId
     ) {
-        return sendBox(
+        return safeReply(
             message,
-            "Protected",
+            "PROTECTED",
             "The server owner cannot be forever banned.",
             "error"
         );
@@ -2052,31 +2222,22 @@ async function foreverBan(
         );
     }
 
-    saveDB();
+    queueSave();
 
-    try {
-        await target.ban({
-            reason:
-                "VC+ permanent ban"
-        });
-    } catch (error) {
+    await target.ban({
+        reason:
+            "VC+ permanent ban"
+    }).catch(error => {
         console.error(
             "[FOREVER BAN]",
             error
         );
+    });
 
-        return sendBox(
-            message,
-            "Ban failed",
-            "The permanent-ban list was updated, but Discord rejected the immediate ban.",
-            "warning"
-        );
-    }
-
-    return sendBox(
+    return safeReply(
         message,
-        "Forever banned",
-        `${target.user.tag} was added to the VC+ permanent ban list.`,
+        "FOREVER BANNED",
+        `${target.user.tag} is now on the permanent ban list.`,
         "success"
     );
 }
@@ -2088,9 +2249,9 @@ async function foreverBan(
 async function helpCommand(
     message
 ) {
-    return sendBox(
+    return safeReply(
         message,
-        "Help",
+        "HELP",
         [
             "**GENERAL**",
             "`-help`",
@@ -2113,23 +2274,281 @@ async function helpCommand(
             "`-vc unstfu @user`",
             "`-vc dragall`",
             "",
+            "**SECURITY**",
+            "`-godmode on @user`",
+            "`-godmode off @user`",
+            "",
             "**MODERATION**",
             "`-ban @user reason`",
             "`-kick @user reason`",
             "`-timeout @user minutes`",
             "`-untimeout @user`",
-            "`-foreverban @user`",
-            "",
-            "**RANKS**",
-            "`-rank @user rank`",
-            "`-ranklist`",
-            "`-vouch add @user`",
-            "`-vouch limit 3`",
-            "`-godmode on @user`",
-            "`-godmode off @user`"
+            "`-foreverban @user`"
         ].join("\n")
     );
 }
+
+// ============================================================
+// BUTTON / INTERFACE HANDLER
+// ============================================================
+
+client.on(
+    "interactionCreate",
+    async interaction => {
+        try {
+            if (
+                !interaction.isButton() &&
+                !interaction.isStringSelectMenu()
+            ) {
+                return;
+            }
+
+            const guild =
+                interaction.guild;
+
+            if (!guild) {
+                return;
+            }
+
+            const member =
+                await guild.members
+                    .fetch(
+                        interaction.user.id
+                    )
+                    .catch(() => null);
+
+            if (!member) {
+                return;
+            }
+
+            const owned =
+                getOwnedVC(
+                    member
+                );
+
+            if (!owned) {
+                return interaction.reply({
+                    embeds: [
+                        box(
+                            "NO VC",
+                            "You must be inside your VC+ call.",
+                            "error"
+                        )
+                    ],
+                    ephemeral: true
+                }).catch(() => {});
+            }
+
+            if (
+                !canControlVC(
+                    {
+                        guild,
+                        author: interaction.user
+                    },
+                    owned.data
+                )
+            ) {
+                return interaction.reply({
+                    embeds: [
+                        box(
+                            "ACCESS DENIED",
+                            "Only the VC owner, Founder, or God can use this interface.",
+                            "error"
+                        )
+                    ],
+                    ephemeral: true
+                }).catch(() => {});
+            }
+
+            const {
+                channel,
+                data
+            } = owned;
+
+            // LOCK
+            if (
+                interaction.customId ===
+                "vcplus_lock"
+            ) {
+                await channel.permissionOverwrites
+                    .edit(
+                        guild.roles.everyone,
+                        {
+                            Connect: false
+                        }
+                    )
+                    .catch(() => {});
+
+                data.locked = true;
+
+                return interaction.reply({
+                    embeds: [
+                        box(
+                            "VC LOCKED",
+                            "The call is now locked.",
+                            "success"
+                        )
+                    ],
+                    ephemeral: true
+                }).catch(() => {});
+            }
+
+            // UNLOCK
+            if (
+                interaction.customId ===
+                "vcplus_unlock"
+            ) {
+                await channel.permissionOverwrites
+                    .edit(
+                        guild.roles.everyone,
+                        {
+                            Connect: true
+                        }
+                    )
+                    .catch(() => {});
+
+                data.locked = false;
+
+                return interaction.reply({
+                    embeds: [
+                        box(
+                            "VC UNLOCKED",
+                            "The call is open again.",
+                            "success"
+                        )
+                    ],
+                    ephemeral: true
+                }).catch(() => {});
+            }
+
+            // REFRESH
+            if (
+                interaction.customId ===
+                "vcplus_refresh"
+            ) {
+                await sendVCInterface(
+                    channel,
+                    data
+                );
+
+                return interaction.reply({
+                    embeds: [
+                        box(
+                            "REFRESHED",
+                            "A fresh VC+ interface was posted in this call.",
+                            "success"
+                        )
+                    ],
+                    ephemeral: true
+                }).catch(() => {});
+            }
+
+            // STFU SELECT
+            if (
+                interaction.customId ===
+                "vcplus_stfu_select"
+            ) {
+                const targetId =
+                    interaction.values?.[0];
+
+                if (!targetId) {
+                    return interaction.reply({
+                        content:
+                            "No member selected.",
+                        ephemeral: true
+                    }).catch(() => {});
+                }
+
+                const target =
+                    guild.members.cache.get(
+                        targetId
+                    );
+
+                if (!target) {
+                    return interaction.reply({
+                        content:
+                            "Member not found.",
+                        ephemeral: true
+                    }).catch(() => {});
+                }
+
+                if (
+                    isProtected(
+                        guild,
+                        target.id
+                    )
+                ) {
+                    return interaction.reply({
+                        embeds: [
+                            box(
+                                "PROTECTED",
+                                "Founder and God cannot be VC-STFU'd.",
+                                "error"
+                            )
+                        ],
+                        ephemeral: true
+                    }).catch(() => {});
+                }
+
+                if (
+                    target.voice.channelId !==
+                    channel.id
+                ) {
+                    return interaction.reply({
+                        content:
+                            "That member left the VC.",
+                        ephemeral: true
+                    }).catch(() => {});
+                }
+
+                data.stfu.add(
+                    target.id
+                );
+
+                await target.voice
+                    .setMute(
+                        true,
+                        "VC+ interface STFU"
+                    )
+                    .catch(() => {});
+
+                return interaction.reply({
+                    embeds: [
+                        box(
+                            "STFU ENABLED",
+                            `${target} is now locked muted until unstfu.`,
+                            "success"
+                        )
+                    ],
+                    ephemeral: true
+                }).catch(() => {});
+            }
+
+        } catch (error) {
+            console.error(
+                "[INTERACTION]",
+                error
+            );
+
+            if (
+                interaction.isRepliable() &&
+                !interaction.replied &&
+                !interaction.deferred
+            ) {
+                await interaction.reply({
+                    embeds: [
+                        box(
+                            "ERROR",
+                            "The interface failed safely.",
+                            "error"
+                        )
+                    ],
+                    ephemeral: true
+                }).catch(() => {});
+            }
+        }
+    }
+);
 
 // ============================================================
 // MESSAGE ROUTER
@@ -2164,7 +2583,8 @@ client.on(
 
             const command =
                 String(
-                    parts.shift() || ""
+                    parts.shift() ||
+                    ""
                 ).toLowerCase();
 
             if (!command) {
@@ -2182,9 +2602,9 @@ client.on(
             if (
                 command === "ping"
             ) {
-                return sendBox(
+                return safeReply(
                     message,
-                    "Pong",
+                    "PONG",
                     `Latency: **${client.ws.ping}ms**`,
                     "success"
                 );
@@ -2225,15 +2645,6 @@ client.on(
             }
 
             if (
-                command === "vouch"
-            ) {
-                return vouch(
-                    message,
-                    parts
-                );
-            }
-
-            if (
                 command === "godmode"
             ) {
                 return godmodeCommand(
@@ -2260,9 +2671,9 @@ client.on(
                 );
             }
 
-            // =================================================
+            // ------------------------------------------------
             // KICK
-            // =================================================
+            // ------------------------------------------------
 
             if (
                 command === "kick"
@@ -2272,9 +2683,9 @@ client.on(
                         PermissionFlagsBits.KickMembers
                     )
                 ) {
-                    return sendBox(
+                    return safeReply(
                         message,
-                        "Permission denied",
+                        "PERMISSION DENIED",
                         "You need **Kick Members**.",
                         "error"
                     );
@@ -2293,9 +2704,9 @@ client.on(
                         target
                     )
                 ) {
-                    return sendBox(
+                    return safeReply(
                         message,
-                        "Kick failed",
+                        "KICK FAILED",
                         "That member cannot be kicked.",
                         "error"
                     );
@@ -2308,24 +2719,19 @@ client.on(
                             .join(" ") ||
                         "VC+ kick"
                     )
-                    .catch(error => {
-                        console.error(
-                            "[KICK]",
-                            error
-                        );
-                    });
+                    .catch(() => {});
 
-                return sendBox(
+                return safeReply(
                     message,
-                    "Member kicked",
+                    "KICKED",
                     `${target.user.tag} was kicked.`,
                     "success"
                 );
             }
 
-            // =================================================
+            // ------------------------------------------------
             // TIMEOUT
-            // =================================================
+            // ------------------------------------------------
 
             if (
                 command === "timeout"
@@ -2335,9 +2741,9 @@ client.on(
                         PermissionFlagsBits.ModerateMembers
                     )
                 ) {
-                    return sendBox(
+                    return safeReply(
                         message,
-                        "Permission denied",
+                        "PERMISSION DENIED",
                         "You need **Moderate Members**.",
                         "error"
                     );
@@ -2350,7 +2756,9 @@ client.on(
                     );
 
                 const minutes =
-                    Number(parts[1]);
+                    Number(
+                        parts[1]
+                    );
 
                 if (
                     !target ||
@@ -2363,9 +2771,9 @@ client.on(
                         target
                     )
                 ) {
-                    return sendBox(
+                    return safeReply(
                         message,
-                        "Timeout",
+                        "TIMEOUT",
                         "Usage: `-timeout @user minutes`",
                         "warning"
                     );
@@ -2384,24 +2792,19 @@ client.on(
                         duration,
                         "VC+ timeout"
                     )
-                    .catch(error => {
-                        console.error(
-                            "[TIMEOUT]",
-                            error
-                        );
-                    });
+                    .catch(() => {});
 
-                return sendBox(
+                return safeReply(
                     message,
-                    "Timed out",
+                    "TIMED OUT",
                     `${target.user.tag} was timed out for **${minutes} minute(s)**.`,
                     "success"
                 );
             }
 
-            // =================================================
+            // ------------------------------------------------
             // UNTIMEOUT
-            // =================================================
+            // ------------------------------------------------
 
             if (
                 command === "untimeout"
@@ -2411,9 +2814,9 @@ client.on(
                         PermissionFlagsBits.ModerateMembers
                     )
                 ) {
-                    return sendBox(
+                    return safeReply(
                         message,
-                        "Permission denied",
+                        "PERMISSION DENIED",
                         "You need **Moderate Members**.",
                         "error"
                     );
@@ -2426,9 +2829,9 @@ client.on(
                     );
 
                 if (!target) {
-                    return sendBox(
+                    return safeReply(
                         message,
-                        "Untimeout",
+                        "UNTIMEOUT",
                         "Usage: `-untimeout @user`",
                         "warning"
                     );
@@ -2440,10 +2843,10 @@ client.on(
                         target
                     )
                 ) {
-                    return sendBox(
+                    return safeReply(
                         message,
-                        "Protected member",
-                        "You cannot remove the timeout from that protected member.",
+                        "PROTECTED",
+                        "You cannot remove the timeout from that member.",
                         "error"
                     );
                 }
@@ -2453,43 +2856,567 @@ client.on(
                         null,
                         "VC+ untimeout"
                     )
-                    .catch(error => {
-                        console.error(
-                            "[UNTIMEOUT]",
-                            error
-                        );
-                    });
+                    .catch(() => {});
 
-                return sendBox(
+                return safeReply(
                     message,
-                    "Timeout removed",
+                    "UNTIMEOUT",
                     `${target.user.tag} is no longer timed out.`,
                     "success"
                 );
             }
 
-            return sendBox(
+            return safeReply(
                 message,
-                "Unknown command",
+                "UNKNOWN COMMAND",
                 [
                     `I don't recognize \`${PREFIX}${command}\`.`,
                     "",
-                    "Use `-help` to see the available commands."
+                    "Use `-help`."
                 ].join("\n"),
                 "error"
             );
 
         } catch (error) {
             console.error(
-                "[COMMAND ROUTER]",
+                "[MESSAGE ROUTER]",
                 error
             );
 
-            await sendBox(
+            await safeReply(
                 message,
-                "Command error",
-                "Something went wrong while processing that command. The bot stayed online.",
+                "COMMAND ERROR",
+                "The command failed safely. VC+ stayed online.",
                 "error"
+            );
+        }
+    }
+);
+
+// ============================================================
+// ANTI-NUKE HELPERS
+// ============================================================
+
+function isTrustedUser(
+    guild,
+    userId
+) {
+    return (
+        guild.ownerId ===
+            userId ||
+        getRank(
+            guild,
+            userId
+        ) === "founder"
+    );
+}
+
+function dangerousRolePermissions(
+    permissions
+) {
+    const dangerous = [
+        PermissionFlagsBits.Administrator,
+        PermissionFlagsBits.ManageGuild,
+        PermissionFlagsBits.ManageChannels,
+        PermissionFlagsBits.ManageRoles,
+        PermissionFlagsBits.ManageWebhooks,
+        PermissionFlagsBits.ManageMessages,
+        PermissionFlagsBits.BanMembers,
+        PermissionFlagsBits.KickMembers,
+        PermissionFlagsBits.ModerateMembers,
+        PermissionFlagsBits.MentionEveryone
+    ];
+
+    return dangerous.some(
+        permission =>
+            permissions.has(
+                permission
+            )
+    );
+}
+
+async function removeDangerousPermissions(
+    role
+) {
+    try {
+        if (
+            !role ||
+            role.managed
+        ) {
+            return false;
+        }
+
+        if (
+            role.id ===
+            role.guild.id
+        ) {
+            return false;
+        }
+
+        const clean =
+            role.permissions
+                .remove(
+                    [
+                        PermissionFlagsBits.Administrator,
+                        PermissionFlagsBits.ManageGuild,
+                        PermissionFlagsBits.ManageChannels,
+                        PermissionFlagsBits.ManageRoles,
+                        PermissionFlagsBits.ManageWebhooks,
+                        PermissionFlagsBits.BanMembers,
+                        PermissionFlagsBits.KickMembers,
+                        PermissionFlagsBits.ModerateMembers
+                    ]
+                );
+
+        await role.setPermissions(
+            clean,
+            "VC+ anti-nuke protection"
+        );
+
+        return true;
+
+    } catch (error) {
+        console.error(
+            "[REMOVE DANGEROUS PERMISSIONS]",
+            error
+        );
+
+        return false;
+    }
+}
+
+// ============================================================
+// AUDIT LOG EXECUTOR
+// ============================================================
+
+async function getRecentExecutor(
+    guild,
+    type,
+    targetId
+) {
+    try {
+        const logs =
+            await guild.fetchAuditLogs({
+                type,
+                limit: 5
+            });
+
+        const entry =
+            logs.entries.find(
+                item =>
+                    item.target?.id ===
+                        targetId &&
+                    Date.now() -
+                        item.createdTimestamp <
+                        15000
+            );
+
+        return entry?.executor ??
+            null;
+
+    } catch (error) {
+        console.error(
+            "[AUDIT LOG]",
+            error
+        );
+
+        return null;
+    }
+}
+
+// ============================================================
+// ANTI-NUKE
+// ============================================================
+
+async function handleUnauthorizedAction(
+    guild,
+    executor,
+    action
+) {
+    try {
+        if (!executor) {
+            return;
+        }
+
+        if (
+            isTrustedUser(
+                guild,
+                executor.id
+            )
+        ) {
+            return;
+        }
+
+        console.warn(
+            `[ANTI-NUKE] ${executor.tag} -> ${action}`
+        );
+
+        const member =
+            await guild.members
+                .fetch(
+                    executor.id
+                )
+                .catch(() => null);
+
+        if (!member) {
+            return;
+        }
+
+        // Remove dangerous permissions
+        // from roles the user controls.
+        for (
+            const role of
+            member.roles.cache.values()
+        ) {
+            if (
+                role.managed
+            ) {
+                continue;
+            }
+
+            if (
+                dangerousRolePermissions(
+                    role.permissions
+                )
+            ) {
+                await removeDangerousPermissions(
+                    role
+                );
+            }
+        }
+
+        // Do not attempt to punish the server owner.
+        if (
+            executor.id ===
+            guild.ownerId
+        ) {
+            return;
+        }
+
+        // Kick unauthorized account
+        // if the bot has sufficient hierarchy.
+        if (
+            member.kickable
+        ) {
+            await member
+                .kick(
+                    `VC+ anti-nuke: ${action}`
+                )
+                .catch(error => {
+                    console.error(
+                        "[ANTI-NUKE KICK]",
+                        error
+                    );
+                });
+        }
+
+    } catch (error) {
+        console.error(
+            "[ANTI-NUKE ACTION]",
+            error
+        );
+    }
+}
+
+// ============================================================
+// ROLE CREATE
+// ============================================================
+
+client.on(
+    "roleCreate",
+    async role => {
+        try {
+            const guild =
+                role.guild;
+
+            const executor =
+                await getRecentExecutor(
+                    guild,
+                    AuditLogEvent.RoleCreate,
+                    role.id
+                );
+
+            if (
+                !executor ||
+                isTrustedUser(
+                    guild,
+                    executor.id
+                )
+            ) {
+                return;
+            }
+
+            if (
+                dangerousRolePermissions(
+                    role.permissions
+                )
+            ) {
+                await role
+                    .delete(
+                        "VC+ anti-nuke unauthorized dangerous role"
+                    )
+                    .catch(() => {});
+            }
+
+            await handleUnauthorizedAction(
+                guild,
+                executor,
+                "unauthorized role creation"
+            );
+
+        } catch (error) {
+            console.error(
+                "[ROLE CREATE]",
+                error
+            );
+        }
+    }
+);
+
+// ============================================================
+// ROLE DELETE
+// ============================================================
+
+client.on(
+    "roleDelete",
+    async role => {
+        try {
+            const guild =
+                role.guild;
+
+            const executor =
+                await getRecentExecutor(
+                    guild,
+                    AuditLogEvent.RoleDelete,
+                    role.id
+                );
+
+            await handleUnauthorizedAction(
+                guild,
+                executor,
+                "role deletion"
+            );
+
+        } catch (error) {
+            console.error(
+                "[ROLE DELETE]",
+                error
+            );
+        }
+    }
+);
+
+// ============================================================
+// CHANNEL CREATE
+// ============================================================
+
+client.on(
+    "channelCreate",
+    async channel => {
+        try {
+            if (!channel.guild) {
+                return;
+            }
+
+            const executor =
+                await getRecentExecutor(
+                    channel.guild,
+                    AuditLogEvent.ChannelCreate,
+                    channel.id
+                );
+
+            if (
+                !executor ||
+                isTrustedUser(
+                    channel.guild,
+                    executor.id
+                )
+            ) {
+                return;
+            }
+
+            // Remove unauthorized channels.
+            await channel
+                .delete(
+                    "VC+ anti-nuke unauthorized channel"
+                )
+                .catch(() => {});
+
+            await handleUnauthorizedAction(
+                channel.guild,
+                executor,
+                "unauthorized channel creation"
+            );
+
+        } catch (error) {
+            console.error(
+                "[CHANNEL CREATE]",
+                error
+            );
+        }
+    }
+);
+
+// ============================================================
+// CHANNEL DELETE
+// ============================================================
+
+client.on(
+    "channelDelete",
+    async channel => {
+        try {
+            if (!channel.guild) {
+                return;
+            }
+
+            const executor =
+                await getRecentExecutor(
+                    channel.guild,
+                    AuditLogEvent.ChannelDelete,
+                    channel.id
+                );
+
+            await handleUnauthorizedAction(
+                channel.guild,
+                executor,
+                "channel deletion"
+            );
+
+        } catch (error) {
+            console.error(
+                "[CHANNEL DELETE]",
+                error
+            );
+        }
+    }
+);
+
+// ============================================================
+// ROLE UPDATE
+// ============================================================
+
+client.on(
+    "roleUpdate",
+    async (
+        oldRole,
+        newRole
+    ) => {
+        try {
+            const guild =
+                newRole.guild;
+
+            const executor =
+                await getRecentExecutor(
+                    guild,
+                    AuditLogEvent.RoleUpdate,
+                    newRole.id
+                );
+
+            if (
+                !executor ||
+                isTrustedUser(
+                    guild,
+                    executor.id
+                )
+            ) {
+                return;
+            }
+
+            if (
+                dangerousRolePermissions(
+                    newRole.permissions
+                )
+            ) {
+                await newRole.setPermissions(
+                    oldRole.permissions,
+                    "VC+ anti-nuke restore"
+                ).catch(() => {});
+            }
+
+            await handleUnauthorizedAction(
+                guild,
+                executor,
+                "unauthorized role permission change"
+            );
+
+        } catch (error) {
+            console.error(
+                "[ROLE UPDATE]",
+                error
+            );
+        }
+    }
+);
+
+// ============================================================
+// GUILD UPDATE
+// ============================================================
+
+client.on(
+    "guildUpdate",
+    async (
+        oldGuild,
+        newGuild
+    ) => {
+        try {
+            const executor =
+                await getRecentExecutor(
+                    newGuild,
+                    AuditLogEvent.GuildUpdate,
+                    newGuild.id
+                );
+
+            if (
+                !executor ||
+                isTrustedUser(
+                    newGuild,
+                    executor.id
+                )
+            ) {
+                return;
+            }
+
+            // Restore important server metadata.
+            const changes = {};
+
+            if (
+                oldGuild.name !==
+                newGuild.name
+            ) {
+                changes.name =
+                    oldGuild.name;
+            }
+
+            if (
+                oldGuild.verificationLevel !==
+                newGuild.verificationLevel
+            ) {
+                changes.verificationLevel =
+                    oldGuild.verificationLevel;
+            }
+
+            if (
+                Object.keys(changes)
+                    .length
+            ) {
+                await newGuild
+                    .edit(
+                        changes,
+                        "VC+ anti-nuke restore"
+                    )
+                    .catch(() => {});
+            }
+
+            await handleUnauthorizedAction(
+                newGuild,
+                executor,
+                "unauthorized server modification"
+            );
+
+        } catch (error) {
+            console.error(
+                "[GUILD UPDATE]",
+                error
             );
         }
     }
@@ -2519,33 +3446,26 @@ client.on(
                     guild.id
                 );
 
-            // =================================================
+            // ------------------------------------------------
             // JOIN TO CREATE
-            // =================================================
+            // ------------------------------------------------
 
             if (
                 newState.channelId &&
                 newState.channelId ===
                     g.jtc.triggerId
             ) {
-                const channel =
-                    await createPersonalVC(
-                        newState.member,
-                        newState.channel
-                    );
-
-                if (!channel) {
-                    console.error(
-                        "[JTC] Could not create personal VC."
-                    );
-                }
+                await createPersonalVC(
+                    newState.member,
+                    newState.channel
+                );
 
                 return;
             }
 
-            // =================================================
-            // TEMP VC JOIN PROTECTION
-            // =================================================
+            // ------------------------------------------------
+            // PERSONAL VC
+            // ------------------------------------------------
 
             if (
                 newState.channelId
@@ -2566,10 +3486,7 @@ client.on(
                     const userId =
                         member.id;
 
-                    // -----------------------------------------
                     // VC BAN / REJECT
-                    // -----------------------------------------
-
                     if (
                         data.banned.has(
                             userId
@@ -2587,10 +3504,7 @@ client.on(
                         return;
                     }
 
-                    // -----------------------------------------
-                    // FOUNDER / GOD PROTECTION
-                    // -----------------------------------------
-
+                    // PROTECTED MEMBERS
                     if (
                         isProtected(
                             guild,
@@ -2605,36 +3519,29 @@ client.on(
                             .catch(() => {});
                     }
 
-                    // -----------------------------------------
                     // STFU
-                    // -----------------------------------------
-
                     if (
                         data.stfu.has(
                             userId
+                        ) &&
+                        !isProtected(
+                            guild,
+                            userId
                         )
                     ) {
-                        // Founder/God always win.
-                        if (
-                            !isProtected(
-                                guild,
-                                userId
+                        await member.voice
+                            .setMute(
+                                true,
+                                "VC+ STFU"
                             )
-                        ) {
-                            await member.voice
-                                .setMute(
-                                    true,
-                                    "VC+ STFU protection"
-                                )
-                                .catch(() => {});
-                        }
+                            .catch(() => {});
                     }
                 }
             }
 
-            // =================================================
-            // GODMODE SERVER VOICE MUTE PROTECTION
-            // =================================================
+            // ------------------------------------------------
+            // SERVER MUTE PROTECTION
+            // ------------------------------------------------
 
             if (
                 newState.serverMute &&
@@ -2643,33 +3550,33 @@ client.on(
                 const userId =
                     newState.member.id;
 
-                const rank =
-                    getRank(
+                const protectedRank =
+                    isProtected(
                         guild,
                         userId
                     );
 
                 const godmode =
-                    g.godmode[userId] ===
-                    true;
+                    g.godmode[
+                        userId
+                    ] === true;
 
                 if (
-                    rank === "founder" ||
-                    rank === "god" ||
+                    protectedRank ||
                     godmode
                 ) {
                     await newState.member.voice
                         .setMute(
                             false,
-                            "VC+ Godmode protection"
+                            "VC+ protection"
                         )
                         .catch(() => {});
                 }
             }
 
-            // =================================================
-            // CLEAN EMPTY TEMP VC
-            // =================================================
+            // ------------------------------------------------
+            // CLEAN EMPTY PERSONAL VC
+            // ------------------------------------------------
 
             if (
                 oldState.channelId
@@ -2688,9 +3595,7 @@ client.on(
                         oldChannel.id
                     );
 
-                if (
-                    !data
-                ) {
+                if (!data) {
                     return;
                 }
 
@@ -2702,28 +3607,9 @@ client.on(
                         oldChannel.id
                     );
 
-                    if (
-                        data.interfaceId
-                    ) {
-                        const interfaceChannel =
-                            guild.channels.cache.get(
-                                data.interfaceId
-                            );
-
-                        if (
-                            interfaceChannel
-                        ) {
-                            await interfaceChannel
-                                .delete(
-                                    "VC+ empty VC cleanup"
-                                )
-                                .catch(() => {});
-                        }
-                    }
-
                     await oldChannel
                         .delete(
-                            "VC+ empty VC cleanup"
+                            "VC+ empty personal VC"
                         )
                         .catch(() => {});
                 }
@@ -2739,7 +3625,7 @@ client.on(
 );
 
 // ============================================================
-// FOREVER BAN PROTECTION
+// FOREVER BAN
 // ============================================================
 
 client.on(
@@ -2763,7 +3649,7 @@ client.on(
                     })
                     .catch(error => {
                         console.error(
-                            "[AUTO FOREVER BAN]",
+                            "[AUTO BAN]",
                             error
                         );
                     });
@@ -2771,7 +3657,7 @@ client.on(
 
         } catch (error) {
             console.error(
-                "[GUILD MEMBER ADD]",
+                "[MEMBER ADD]",
                 error
             );
         }
@@ -2779,83 +3665,67 @@ client.on(
 );
 
 // ============================================================
-// REPEATED GODMODE PROTECTION
+// STARTUP SECURITY SCAN
 // ============================================================
 
-client.on(
-    "voiceStateUpdate",
-    async (
-        oldState,
-        newState
-    ) => {
-        try {
+async function securityScan(
+    guild
+) {
+    try {
+        await guild.roles.fetch();
+
+        for (
+            const role of
+            guild.roles.cache.values()
+        ) {
             if (
-                !newState.member
-            ) {
-                return;
-            }
-
-            if (
-                !newState.serverMute
-            ) {
-                return;
-            }
-
-            const guild =
-                newState.guild;
-
-            const g =
-                guildData(
+                role.managed ||
+                role.id ===
                     guild.id
-                );
-
-            const userId =
-                newState.member.id;
-
-            const protectedRank =
-                isProtected(
-                    guild,
-                    userId
-                );
-
-            const enabled =
-                g.godmode[userId] ===
-                true;
-
-            if (
-                protectedRank ||
-                enabled
             ) {
-                await newState.member.voice
-                    .setMute(
-                        false,
-                        "VC+ personal protection"
-                    )
-                    .catch(() => {});
+                continue;
             }
 
-        } catch (error) {
-            console.error(
-                "[GODMODE PROTECTION]",
-                error
-            );
+            // Do not touch Founder-controlled roles.
+            // Only strip dangerous permissions from
+            // suspicious roles if the bot can manage them.
+            if (
+                role.permissions.has(
+                    PermissionFlagsBits.Administrator
+                ) &&
+                role.position <
+                    guild.members.me.roles.highest.position
+            ) {
+                // We intentionally do NOT blindly
+                // remove Administrator from every
+                // existing role on startup.
+                //
+                // Existing server roles may be legitimate.
+                continue;
+            }
         }
+
+    } catch (error) {
+        console.error(
+            "[SECURITY SCAN]",
+            error
+        );
     }
-);
+}
 
 // ============================================================
-// STARTUP
+// READY
 // ============================================================
 
 client.once(
     "ready",
-    () => {
+    async () => {
         console.log(
             "======================================"
         );
 
         console.log(
-            "VC+ IS ONLINE"
+            "♡ VC+ IS ONLINE"
         );
 
         console.log(
@@ -2867,12 +3737,25 @@ client.once(
         );
 
         console.log(
+            "Anti-nuke: ACTIVE"
+        );
+
+        console.log(
+            "VC protection: ACTIVE"
+        );
+
+        console.log(
+            "Godmode protection: ACTIVE"
+        );
+
+        console.log(
             "======================================"
         );
 
         try {
             client.user.setPresence({
-                status: "online",
+                status:
+                    "online",
 
                 activities: [
                     {
@@ -2887,6 +3770,15 @@ client.once(
             console.error(
                 "[PRESENCE]",
                 error
+            );
+        }
+
+        for (
+            const guild of
+            client.guilds.cache.values()
+        ) {
+            await securityScan(
+                guild
             );
         }
     }
@@ -2959,18 +3851,23 @@ if (!token) {
     );
 
     console.error(
-        "Put DISCORD_TOKEN=your_bot_token in .env"
+        "Create a .env file with:"
+    );
+
+    console.error(
+        "DISCORD_TOKEN=your_bot_token"
     );
 
     process.exit(1);
 }
 
-client.login(token)
-    .catch(error => {
-        console.error(
-            "[LOGIN ERROR]",
-            error
-        );
+client.login(
+    token
+).catch(error => {
+    console.error(
+        "[LOGIN ERROR]",
+        error
+    );
 
-        process.exit(1);
-    });
+    process.exit(1);
+});
