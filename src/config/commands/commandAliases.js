@@ -4,6 +4,9 @@
  */
 
 export const commandAliases = {
+    // =========================
+    // ECONOMY
+    // =========================
     'bal': 'balance',
     'money': 'balance',
     'cash': 'balance',
@@ -20,11 +23,17 @@ export const commandAliases = {
     'give': 'pay',
     'send': 'pay',
 
+    // =========================
+    // BASIC
+    // =========================
     'ping': 'ping',
     'help': 'help',
     'h': 'help',
     'info': 'help',
 
+    // =========================
+    // MODERATION
+    // =========================
     'ban': 'ban',
     'kick': 'kick',
     'mute': 'timeout',
@@ -34,119 +43,254 @@ export const commandAliases = {
     'untimeout': 'untimeout',
     'unmute': 'untimeout',
 
+    // =========================
+    // LEVELING
+    // =========================
     'rank': 'rank',
     'lvl': 'rank',
     'xp': 'rank',
+
     'leaderboard': 'leaderboard',
     'lb': 'leaderboard',
     'top': 'leaderboard',
 
+    // =========================
+    // SHOP
+    // =========================
     'shop': 'shop',
     'buy': 'buy',
     'inventory': 'inventory',
     'inv': 'inventory',
     'items': 'inventory',
 
+    // =========================
+    // USER
+    // =========================
     'user': 'userinfo',
+    'userinfo': 'userinfo',
+    'whois': 'userinfo',
+    'ui': 'userinfo',
+
     'avatar': 'avatar',
     'pfp': 'avatar',
     'icon': 'avatar',
 
+    // =========================
+    // BIRTHDAY
+    // =========================
     'bd': 'birthday',
     'bday': 'birthday',
     'b': 'birthday',
 
+    // =========================
+    // FUN
+    // =========================
     'flip': 'flip',
     'coin': 'flip',
     'roll': 'roll',
     'dice': 'roll',
     'fight': 'fight',
 
+    // =========================
+    // GIVEAWAYS
+    // =========================
     'gcreate': 'gcreate',
     'gstart': 'gcreate',
+
     'gend': 'gend',
     'gstop': 'gend',
+
     'gdelete': 'gdelete',
+
     'greroll': 'greroll',
     'groll': 'greroll',
 
+    // =========================
+    // TICKETS
+    // =========================
     'ticket': 'ticket',
     't': 'ticket',
     'new': 'ticket',
 
+    // =========================
+    // VERIFICATION
+    // =========================
     'ver': 'verify',
     'vadmin': 'verification',
     'av': 'autoverify',
 
+    // =========================
+    // WELCOME
+    // =========================
     'welcome': 'welcome',
     'greet': 'greet',
     'goodbye': 'goodbye',
     'autorole': 'autorole',
 
+    // =========================
+    // TOOLS
+    // =========================
     'calc': 'calculate',
     'math': 'calculate',
     'weather': 'weather',
     'todo': 'todo',
     'report': 'report',
-    'userinfo': 'userinfo',
-    'whois': 'userinfo',
-    'ui': 'userinfo',
 
+    // =========================
+    // SERVER STATS
+    // =========================
     'serverstats': 'serverstats',
     'ss': 'serverstats',
     'sstats': 'serverstats',
 
+    // =========================
+    // REACTION ROLES
+    // =========================
     'rr': 'reactroles',
     'reactionroles': 'reactroles',
 
-    'jtc': 'jointocreate',
-    'jointocreate': 'jointocreate',
+    // =========================
+    // VOICE
+    // =========================
+    'vc': 'vc',
+    'voice': 'vc',
+    'v': 'vc',
 
+    // Join-to-create old names
+    'jtc': 'vc',
+    'jointocreate': 'vc',
+
+    // =========================
+    // MUSIC
+    // =========================
     'np': 'nowplaying',
     'now': 'nowplaying',
 };
 
+
+/**
+ * Subcommand aliases
+ */
 export const subcommandAliases = {
+
+    // General
     'l': 'list',
     'ls': 'list',
+
     's': 'set',
     'i': 'info',
+
     'r': 'remove',
     'rm': 'remove',
     'del': 'remove',
+
     'n': 'next',
     'sc': 'setchannel',
 
+    // Tasks
     'a': 'add',
     'c': 'complete',
     'done': 'complete',
     'd': 'complete',
 
+    // Giveaways
     'start': 'create',
     'stop': 'end',
     'roll': 'reroll',
 
+    // Generic
     'add': 'add',
     'remove': 'remove',
     'list': 'list',
 };
 
+
 /**
  * Resolve a command alias to its full command name
- * @param {string} commandName - The command name (could be an alias)
- * @returns {string} - The full command name, or the original if not an alias
+ *
+ * @param {string} commandName
+ * @returns {string}
  */
 export function resolveCommandAlias(commandName) {
-    const normalized = commandName.toLowerCase();
-    return commandAliases[normalized] || commandName;
+    if (!commandName) {
+        return commandName;
+    }
+
+    const normalized = String(commandName)
+        .trim()
+        .toLowerCase();
+
+    return commandAliases[normalized] || normalized;
 }
+
 
 /**
  * Resolve a subcommand alias to its full subcommand name
- * @param {string} subcommandName - The subcommand name (could be an alias)
- * @returns {string} - The full subcommand name, or the original if not an alias
+ *
+ * @param {string} subcommandName
+ * @returns {string}
  */
 export function resolveSubcommandAlias(subcommandName) {
-    const normalized = subcommandName.toLowerCase();
-    return subcommandAliases[normalized] || subcommandName;
+    if (!subcommandName) {
+        return subcommandName;
+    }
+
+    const normalized = String(subcommandName)
+        .trim()
+        .toLowerCase();
+
+    return subcommandAliases[normalized] || normalized;
+}
+
+
+/**
+ * Check whether a command has an alias
+ *
+ * @param {string} commandName
+ * @returns {boolean}
+ */
+export function hasCommandAlias(commandName) {
+    if (!commandName) {
+        return false;
+    }
+
+    const normalized = String(commandName)
+        .trim()
+        .toLowerCase();
+
+    return Object.prototype.hasOwnProperty.call(
+        commandAliases,
+        normalized
+    );
+}
+
+
+/**
+ * Get all aliases for a command
+ *
+ * @param {string} commandName
+ * @returns {string[]}
+ */
+export function getCommandAliases(commandName) {
+    if (!commandName) {
+        return [];
+    }
+
+    const normalized = String(commandName)
+        .trim()
+        .toLowerCase();
+
+    return Object.entries(commandAliases)
+        .filter(([, target]) => target === normalized)
+        .map(([alias]) => alias);
+}
+
+
+/**
+ * Get all aliases
+ *
+ * @returns {object}
+ */
+export function getAllCommandAliases() {
+    return { ...commandAliases };
 }
