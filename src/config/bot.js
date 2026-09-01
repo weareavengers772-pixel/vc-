@@ -1,8 +1,17 @@
 import { logger } from "../utils/logger.js";
 
+// ============================================================
+// BOT CONFIG
+// ============================================================
+
 export const botConfig = {
+  // ==========================================================
+  // PRESENCE
+  // ==========================================================
+
   presence: {
     status: "online",
+
     activities: [
       {
         name: "Custom Status",
@@ -12,24 +21,51 @@ export const botConfig = {
     ],
   },
 
+  // ==========================================================
+  // COMMANDS
+  // ==========================================================
+
   commands: {
     owners:
-      process.env.OWNER_IDS?.split(",")
+      process.env.OWNER_IDS
+        ?.split(",")
         .map((id) => id.trim())
         .filter(Boolean) || [],
 
     defaultCooldown: 3,
+
     deleteCommands: false,
+
     testGuildId: process.env.TEST_GUILD_ID,
-    maintenanceMode: process.env.MAINTENANCE_MODE === "true",
+
+    maintenanceMode:
+      process.env.MAINTENANCE_MODE === "true",
+
+    // Prefix commands:
+    // -help
+    // -ping
+    // -vc setup
     prefix: process.env.PREFIX || "-",
   },
 
+  // ==========================================================
+  // APPLICATIONS
+  // ==========================================================
+
   applications: {
     defaultQuestions: [
-      { question: "What is your name?", required: true },
-      { question: "How old are you?", required: true },
-      { question: "Why do you want to join?", required: true },
+      {
+        question: "What is your name?",
+        required: true,
+      },
+      {
+        question: "How old are you?",
+        required: true,
+      },
+      {
+        question: "Why do you want to join?",
+        required: true,
+      },
     ],
 
     statusColors: {
@@ -41,20 +77,28 @@ export const botConfig = {
     applicationCooldown: 24,
     deleteDeniedAfter: 7,
     deleteApprovedAfter: 30,
+
     managerRoles: [],
   },
+
+  // ==========================================================
+  // EMBEDS
+  // ==========================================================
 
   embeds: {
     colors: {
       primary: "#336699",
       secondary: "#2F3136",
+
       success: "#57F287",
       error: "#ED4245",
       warning: "#FEE75C",
       info: "#3498DB",
+
       light: "#FFFFFF",
       dark: "#202225",
       gray: "#99AAB5",
+
       blurple: "#5865F2",
       green: "#57F287",
       yellow: "#FEE75C",
@@ -80,10 +124,10 @@ export const botConfig = {
 
       priority: {
         none: "#95A5A6",
-        low: "#3498db",
-        medium: "#2ecc71",
-        high: "#f1c40f",
-        urgent: "#e74c3c",
+        low: "#3498DB",
+        medium: "#2ECC71",
+        high: "#F1C40F",
+        urgent: "#E74C3C",
       },
     },
 
@@ -100,6 +144,10 @@ export const botConfig = {
       url: null,
     },
   },
+
+  // ==========================================================
+  // ECONOMY
+  // ==========================================================
 
   economy: {
     currency: {
@@ -129,10 +177,19 @@ export const botConfig = {
     robFailJailTime: 3600000,
   },
 
+  // ==========================================================
+  // SHOP
+  // ==========================================================
+
   shop: {},
+
+  // ==========================================================
+  // TICKETS
+  // ==========================================================
 
   tickets: {
     defaultCategory: null,
+
     supportRoles: [],
 
     priorities: {
@@ -141,21 +198,25 @@ export const botConfig = {
         color: "#95A5A6",
         label: "None",
       },
+
       low: {
         emoji: "🟢",
         color: "#2ECC71",
         label: "Low",
       },
+
       medium: {
         emoji: "🟡",
         color: "#F1C40F",
         label: "Medium",
       },
+
       high: {
         emoji: "🔴",
         color: "#E74C3C",
         label: "High",
       },
+
       urgent: {
         emoji: "🚨",
         color: "#E91E63",
@@ -168,21 +229,36 @@ export const botConfig = {
     logChannel: null,
   },
 
+  // ==========================================================
+  // GIVEAWAYS
+  // ==========================================================
+
   giveaways: {
     defaultDuration: 86400000,
+
     minimumWinners: 1,
     maximumWinners: 10,
+
     minimumDuration: 300000,
     maximumDuration: 2592000000,
+
     allowedRoles: [],
     bypassRoles: [],
   },
+
+  // ==========================================================
+  // BIRTHDAY
+  // ==========================================================
 
   birthday: {
     defaultRole: null,
     announcementChannel: null,
     timezone: "UTC",
   },
+
+  // ==========================================================
+  // VERIFICATION
+  // ==========================================================
 
   verification: {
     defaultMessage:
@@ -192,10 +268,14 @@ export const botConfig = {
 
     autoVerify: {
       defaultCriteria: "none",
+
       defaultAccountAgeDays: 7,
+
       serverSizeThreshold: 1000,
+
       minAccountAge: 1,
       maxAccountAge: 365,
+
       sendDMNotification: true,
 
       criteria: {
@@ -211,16 +291,29 @@ export const botConfig = {
     },
 
     verificationCooldown: 5000,
+
     maxVerificationAttempts: 3,
+
     attemptWindow: 60000,
+
     maxCooldownEntries: 10000,
+
     maxAttemptEntries: 10000,
+
     cooldownCleanupInterval: 300000,
+
     maxAuditMetadataBytes: 4096,
+
     maxInMemoryAuditEntries: 1000,
+
     logAllVerifications: true,
+
     keepAuditTrail: true,
   },
+
+  // ==========================================================
+  // WELCOME
+  // ==========================================================
 
   welcome: {
     defaultWelcomeMessage:
@@ -230,8 +323,13 @@ export const botConfig = {
       "{user} has left the server. We now have {memberCount} members.",
 
     defaultWelcomeChannel: null,
+
     defaultGoodbyeChannel: null,
   },
+
+  // ==========================================================
+  // COUNTERS
+  // ==========================================================
 
   counters: {
     defaults: {
@@ -279,7 +377,8 @@ export const botConfig = {
 
       members_only: {
         name: "👤 Humans",
-        description: "Total human members (non-bots)",
+        description:
+          "Total human members (non-bots)",
 
         getCount: (guild) =>
           guild.members.cache
@@ -289,6 +388,10 @@ export const botConfig = {
       },
     },
   },
+
+  // ==========================================================
+  // MESSAGES
+  // ==========================================================
 
   messages: {
     noPermission:
@@ -310,19 +413,26 @@ export const botConfig = {
       "The bot is currently in maintenance mode.",
   },
 
+  // ==========================================================
+  // FEATURES
+  // ==========================================================
+
   features: {
     economy: true,
     leveling: true,
     moderation: true,
     logging: true,
     welcome: true,
+
     tickets: true,
     giveaways: true,
     birthday: true,
     counter: true,
+
     verification: true,
     reactionRoles: true,
     joinToCreate: true,
+
     voice: true,
     search: true,
     tools: true,
@@ -334,50 +444,67 @@ export const botConfig = {
 };
 
 
-// =========================
+// ============================================================
 // PREFIX
-// =========================
+// ============================================================
 
 export function getCommandPrefix() {
-  return botConfig.commands?.prefix ?? "-";
+  return botConfig.commands?.prefix || "-";
 }
 
 
-// =========================
+// ============================================================
 // BOT OWNERS
-// =========================
+// ============================================================
 
 export function getBotOwners() {
-  return (botConfig.commands?.owners ?? [])
+  return (
+    botConfig.commands?.owners || []
+  )
     .map((id) => String(id).trim())
     .filter(Boolean);
 }
 
-export function isBotOwner(userId) {
-  if (!userId) return false;
 
-  return getBotOwners().includes(String(userId));
+export function isBotOwner(userId) {
+  if (!userId) {
+    return false;
+  }
+
+  return getBotOwners().includes(
+    String(userId)
+  );
 }
 
 
-// =========================
+// ============================================================
 // MAINTENANCE
-// =========================
+// ============================================================
 
 export function isMaintenanceMode() {
-  return botConfig.commands?.maintenanceMode === true;
+  return (
+    botConfig.commands?.maintenanceMode === true
+  );
 }
 
 
-// =========================
-// MESSAGES
-// =========================
+// ============================================================
+// BOT MESSAGES
+// ============================================================
 
-export function getBotMessage(key, replacements = {}) {
-  let message = botConfig.messages?.[key] || key;
+export function getBotMessage(
+  key,
+  replacements = {}
+) {
+  let message =
+    botConfig.messages?.[key] || key;
 
-  for (const [placeholder, value] of Object.entries(replacements)) {
-    const searchText = `{${placeholder}}`;
+  for (
+    const [placeholder, value]
+    of Object.entries(replacements)
+  ) {
+    const searchText =
+      `{${placeholder}}`;
 
     message = message
       .split(searchText)
@@ -388,9 +515,9 @@ export function getBotMessage(key, replacements = {}) {
 }
 
 
-// =========================
-// FEATURES
-// =========================
+// ============================================================
+// COMMAND CATEGORY FEATURES
+// ============================================================
 
 const COMMAND_CATEGORY_FEATURE_MAP = {
   birthday: "birthday",
@@ -399,6 +526,8 @@ const COMMAND_CATEGORY_FEATURE_MAP = {
   fun: "fun",
   giveaway: "giveaways",
   jointocreate: "joinToCreate",
+  vc: "voice",
+  voice: "voice",
   leveling: "leveling",
   logging: "logging",
   moderation: "moderation",
@@ -413,6 +542,7 @@ const COMMAND_CATEGORY_FEATURE_MAP = {
   welcome: "welcome",
 };
 
+
 function normalizeCategoryKey(category) {
   return String(category || "")
     .trim()
@@ -420,57 +550,83 @@ function normalizeCategoryKey(category) {
     .replace(/\s+/g, "_");
 }
 
-export function isFeatureEnabled(featureKey) {
-  if (!featureKey) return true;
 
-  return botConfig.features?.[featureKey] !== false;
+// ============================================================
+// FEATURES
+// ============================================================
+
+export function isFeatureEnabled(featureKey) {
+  if (!featureKey) {
+    return true;
+  }
+
+  return (
+    botConfig.features?.[featureKey] !== false
+  );
 }
 
-export function isCommandCategoryEnabled(category) {
-  const normalized = normalizeCategoryKey(category);
 
-  if (!normalized || normalized === "core") {
+export function isCommandCategoryEnabled(
+  category
+) {
+  const normalized =
+    normalizeCategoryKey(category);
+
+  if (
+    !normalized ||
+    normalized === "core"
+  ) {
     return true;
   }
 
   const featureKey =
-    COMMAND_CATEGORY_FEATURE_MAP[normalized];
+    COMMAND_CATEGORY_FEATURE_MAP[
+      normalized
+    ];
 
-  if (!featureKey) return true;
+  if (!featureKey) {
+    return true;
+  }
 
   return isFeatureEnabled(featureKey);
 }
 
 
-// =========================
+// ============================================================
 // APPLICATION COLORS
-// =========================
+// ============================================================
 
-export function getApplicationStatusColor(status) {
+export function getApplicationStatusColor(
+  status
+) {
   const colors =
-    botConfig.applications?.statusColors || {};
+    botConfig.applications
+      ?.statusColors || {};
 
   const hex = colors[status];
 
-  return hex
-    ? getColor(hex)
-    : getColor(
-        status === "approved"
-          ? "success"
-          : status === "denied"
-          ? "error"
-          : "warning"
-      );
+  if (hex) {
+    return getColor(hex);
+  }
+
+  return getColor(
+    status === "approved"
+      ? "success"
+      : status === "denied"
+      ? "error"
+      : "warning"
+  );
 }
 
 
-// =========================
+// ============================================================
 // APPLICATION QUESTIONS
-// =========================
+// ============================================================
 
 export function getDefaultApplicationQuestions() {
   return (
-    botConfig.applications?.defaultQuestions || []
+    botConfig.applications
+      ?.defaultQuestions || []
   )
     .map((entry) =>
       typeof entry === "string"
@@ -481,9 +637,9 @@ export function getDefaultApplicationQuestions() {
 }
 
 
-// =========================
+// ============================================================
 // COLORS
-// =========================
+// ============================================================
 
 export function getColor(
   path,
@@ -511,7 +667,8 @@ export function getColor(
     .split(".")
     .reduce(
       (obj, key) =>
-        obj && obj[key] !== undefined
+        obj &&
+        obj[key] !== undefined
           ? obj[key]
           : fallback,
       botConfig.embeds.colors
@@ -531,9 +688,9 @@ export function getColor(
 }
 
 
-// =========================
+// ============================================================
 // RANDOM COLOR
-// =========================
+// ============================================================
 
 export function getRandomColor() {
   const colors = Object.values(
@@ -552,9 +709,9 @@ export function getRandomColor() {
 }
 
 
-// =========================
+// ============================================================
 // CONFIG VALIDATION
-// =========================
+// ============================================================
 
 export function validateConfig(config) {
   const errors = [];
@@ -574,11 +731,14 @@ export function validateConfig(config) {
     );
   }
 
-  if (process.env.NODE_ENV === "production") {
-    const hasConnectionUrl = Boolean(
-      process.env.POSTGRES_URL ||
-      process.env.DATABASE_URL
-    );
+  if (
+    process.env.NODE_ENV === "production"
+  ) {
+    const hasConnectionUrl =
+      Boolean(
+        process.env.POSTGRES_URL ||
+        process.env.DATABASE_URL
+      );
 
     if (!hasConnectionUrl) {
       if (!process.env.POSTGRES_HOST) {
@@ -605,11 +765,12 @@ export function validateConfig(config) {
 }
 
 
-// =========================
-// VALIDATE
-// =========================
+// ============================================================
+// VALIDATE CONFIG
+// ============================================================
 
-const configErrors = validateConfig(botConfig);
+const configErrors =
+  validateConfig(botConfig);
 
 if (configErrors.length > 0) {
   logger.error(
@@ -617,16 +778,23 @@ if (configErrors.length > 0) {
     configErrors.join("\n")
   );
 
-  if (process.env.NODE_ENV === "production") {
+  if (
+    process.env.NODE_ENV === "production"
+  ) {
     process.exit(1);
   }
 }
 
 
-// =========================
-// DEFAULT EXPORT
-// =========================
+// ============================================================
+// COMPATIBILITY EXPORTS
+// ============================================================
 
-export const BotConfig = botConfig;
+// Supports:
+// import { botConfig } from "../bot.js"
+// import { BotConfig } from "../bot.js"
+// import botConfig from "../bot.js"
+
+export { botConfig as BotConfig };
 
 export default botConfig;
