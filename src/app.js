@@ -35,13 +35,9 @@ if (!fs.existsSync(DATA_DIR)) {
 if (!fs.existsSync(DATA_FILE)) {
     fs.writeFileSync(
         DATA_FILE,
-        JSON.stringify(
-            {
-                guilds: {}
-            },
-            null,
-            2
-        )
+        JSON.stringify({
+            guilds: {}
+        }, null, 2)
     );
 }
 
@@ -61,11 +57,7 @@ function saveDB() {
     try {
         fs.writeFileSync(
             DATA_FILE,
-            JSON.stringify(
-                db,
-                null,
-                2
-            )
+            JSON.stringify(db, null, 2)
         );
     } catch (error) {
         console.error(
@@ -93,6 +85,13 @@ function defaultGuildData() {
             enabled: false,
             channelId: null,
             categoryId: null
+        },
+
+        logs: {
+            categoryId: null,
+            serverChannelId: null,
+            modChannelId: null,
+            voiceChannelId: null
         },
 
         roles: {
@@ -314,6 +313,295 @@ const client =
     });
 
 // ======================================================
+// LOGGING
+// ======================================================
+
+async function sendLog(
+    guild,
+    type,
+    title,
+    description,
+    fields = []
+) {
+    if (!guild) {
+        return;
+    }
+
+    const data =
+        getGuildData(
+            guild.id
+        );
+
+    let channelId = null;
+
+    if (type === "server") {
+        channelId =
+            data.logs.serverChannelId;
+    }
+
+    if (type === "mod") {
+        channelId =
+            data.logs.modChannelId;
+    }
+
+    if (type === "voice") {
+        channelId =
+            data.logs.voiceChannelId;
+    }
+
+    if (!channelId) {
+        return;
+    }
+
+    const channel =
+        guild.channels.cache.get(
+            channelId
+        );
+
+    if (
+        !channel ||
+        !channel.isTextBased()
+    ) {
+        return;
+    }
+
+    const embed =
+        new EmbedBuilder()
+            .setTitle(title)
+            .setDescription(
+                description
+            )
+            .setTimestamp();
+
+    if (fields.length) {
+        embed.addFields(
+            fields
+        );
+    }
+
+    await channel.send({
+        embeds: [embed]
+    }).catch(
+        error => {
+            console.error(
+                "Log send error:",
+                error
+            );
+        }
+    );
+}
+
+// ======================================================
+// CREATE LOG CHANNELS
+// ======================================================
+
+async function setupLogChannels(
+    guild
+) {
+    const data =
+        getGuildData(
+            guild.id
+        );
+
+    let category = null;
+
+    if (
+        data.logs.categoryId
+    ) {
+        category =
+            guild.channels.cache.get(
+                data.logs.categoryId
+            );
+    }
+
+    // Find existing LOGS category
+    if (
+        !category
+    ) {
+        category =
+            guild.channels.cache.find(
+                channel =>
+                    channel.type ===
+                        ChannelType.GuildCategory &&
+                    channel.name.toLowerCase() ===
+                        "logs"
+            );
+    }
+
+    // Create LOGS category
+    if (!category) {
+        category =
+            await guild.channels.create({
+                name: "LOGS",
+                type:
+                    ChannelType.GuildCategory
+            }).catch(
+                error => {
+                    console.error(
+                        "Log category error:",
+                        error
+                    );
+
+                    return null;
+                }
+            );
+    }
+
+    if (!category) {
+        return null;
+    }
+
+    data.logs.categoryId =
+        category.id;
+
+    // ==================================================
+    // SERVER LOGS
+    // ==================================================
+
+    let serverLogs =
+        data.logs.serverChannelId
+            ? guild.channels.cache.get(
+                data.logs.serverChannelId
+            )
+            : null;
+
+    if (
+        !serverLogs
+    ) {
+        serverLogs =
+            guild.channels.cache.find(
+                channel =>
+                    channel.parentId ===
+                        category.id &&
+                    channel.name ===
+                        "server-logs"
+            );
+    }
+
+    if (!serverLogs) {
+        serverLogs =
+            await guild.channels.create({
+                name:
+                    "server-logs",
+
+                type:
+                    ChannelType.GuildText,
+
+                parent:
+                    category.id
+            }).catch(
+                () => null
+            );
+    }
+
+    if (serverLogs) {
+        data.logs.serverChannelId =
+            serverLogs.id;
+    }
+
+    // ==================================================
+    // MOD LOGS
+    // ==================================================
+
+    let modLogs =
+        data.logs.modChannelId
+            ? guild.channels.cache.get(
+                data.logs.modChannelId
+            )
+            : null;
+
+    if (
+        !modLogs
+    ) {
+        modLogs =
+            guild.channels.cache.find(
+                channel =>
+                    channel.parentId ===
+                        category.id &&
+                    channel.name ===
+                        "mod-logs"
+            );
+    }
+
+    if (!modLogs) {
+        modLogs =
+            await guild.channels.create({
+                name:
+                    "mod-logs",
+
+                type:
+                    ChannelType.GuildText,
+
+                parent:
+                    category.id
+            }).catch(
+                () => null
+            );
+    }
+
+    if (modLogs) {
+        data.logs.modChannelId =
+            modLogs.id;
+    }
+
+    // ==================================================
+    // VOICE LOGS
+    // ==================================================
+
+    let voiceLogs =
+        data.logs.voiceChannelId
+            ? guild.channels.cache.get(
+                data.logs.voiceChannelId
+            )
+            : null;
+
+    if (
+        !voiceLogs
+    ) {
+        voiceLogs =
+            guild.channels.cache.find(
+                channel =>
+                    channel.parentId ===
+                        category.id &&
+                    channel.name ===
+                        "voice-logs"
+            );
+    }
+
+    if (!voiceLogs) {
+        voiceLogs =
+            await guild.channels.create({
+                name:
+                    "voice-logs",
+
+                type:
+                    ChannelType.GuildText,
+
+                parent:
+                    category.id
+            }).catch(
+                () => null
+            );
+    }
+
+    if (voiceLogs) {
+        data.logs.voiceChannelId =
+            voiceLogs.id;
+    }
+
+    saveDB();
+
+    await sendLog(
+        guild,
+        "server",
+        "Logging Enabled",
+        "Server logging has been configured."
+    );
+
+    return category;
+}
+
+// ======================================================
 // MODERATION DM
 // ======================================================
 
@@ -373,6 +661,10 @@ async function sendModerationDM(
 const tempVCs =
     new Map();
 
+// Prevent duplicate interface messages
+const interfaceLocks =
+    new Set();
+
 function createVCData(
     guildId,
     ownerId
@@ -401,7 +693,7 @@ function getVCData(
 }
 
 // ======================================================
-// VC COMMAND INTERFACE
+// VC INTERFACE
 // ======================================================
 
 async function updateVCInterface(
@@ -416,63 +708,80 @@ async function updateVCInterface(
         return;
     }
 
-    const owner =
-        channel.guild.members.cache.get(
-            data.ownerId
-        );
+    // Prevent multiple update operations
+    if (
+        interfaceLocks.has(
+            channel.id
+        )
+    ) {
+        return;
+    }
 
-    const ownerName =
-        owner?.user?.username ??
-        "Unknown";
-
-    const memberCount =
-        channel.members.size;
-
-    const limit =
-        channel.userLimit === 0
-            ? "Unlimited"
-            : String(
-                channel.userLimit
-            );
-
-    const status =
-        data.locked
-            ? "Locked"
-            : "Open";
-
-    const embed =
-        new EmbedBuilder()
-            .setTitle(
-                "Voice Channel"
-            )
-            .setDescription(
-                [
-                    `Owner: **${ownerName}**`,
-                    `Members: **${memberCount}**`,
-                    `Limit: **${limit}**`,
-                    `Status: **${status}**`,
-                    "",
-                    "**Voice Commands**",
-                    "",
-                    "`-vc kick @user`",
-                    "`-vc disconnect @user`",
-                    "`-vc ban @user`",
-                    "`-vc reject @user`",
-                    "`-vc permit @user`",
-                    "`-vc stfu @user`",
-                    "`-vc unstfu @user`",
-                    "`-vc lock`",
-                    "`-vc unlock`",
-                    "`-vc transfer @user`",
-                    "`-vc claim`",
-                    "`-vc forceclaim`",
-                    "`-vc rename name`",
-                    "`-vc limit amount`"
-                ].join("\n")
-            )
-            .setTimestamp();
+    interfaceLocks.add(
+        channel.id
+    );
 
     try {
+        const owner =
+            channel.guild.members.cache.get(
+                data.ownerId
+            );
+
+        const ownerName =
+            owner?.user?.username ??
+            "Unknown";
+
+        const memberCount =
+            channel.members.size;
+
+        const limit =
+            channel.userLimit === 0
+                ? "Unlimited"
+                : String(
+                    channel.userLimit
+                );
+
+        const status =
+            data.locked
+                ? "Locked"
+                : "Open";
+
+        const embed =
+            new EmbedBuilder()
+                .setTitle(
+                    "Voice Channel"
+                )
+                .setDescription(
+                    [
+                        `Owner: **${ownerName}**`,
+                        `Members: **${memberCount}**`,
+                        `Limit: **${limit}**`,
+                        `Status: **${status}**`,
+                        "",
+                        "**Voice Commands**",
+                        "",
+                        "`-vc kick @user`",
+                        "`-vc disconnect @user`",
+                        "`-vc ban @user`",
+                        "`-vc reject @user`",
+                        "`-vc permit @user`",
+                        "`-vc stfu @user`",
+                        "`-vc unstfu @user`",
+                        "`-vc lock`",
+                        "`-vc unlock`",
+                        "`-vc transfer @user`",
+                        "`-vc claim`",
+                        "`-vc forceclaim`",
+                        "`-vc rename name`",
+                        "`-vc limit amount`"
+                    ].join("\n")
+                )
+                .setTimestamp();
+
+        // ==================================================
+        // EXISTING INTERFACE
+        // ==================================================
+
         if (
             data.interfaceMessageId
         ) {
@@ -493,7 +802,56 @@ async function updateVCInterface(
 
                 return;
             }
+
+            // Old message no longer exists
+            data.interfaceMessageId =
+                null;
+
+            saveDB();
         }
+
+        // ==================================================
+        // DOUBLE-CHECK BEFORE SENDING
+        // ==================================================
+
+        const messages =
+            await channel.messages
+                .fetch({
+                    limit: 20
+                })
+                .catch(
+                    () => null
+                );
+
+        if (messages) {
+            const botInterface =
+                messages.find(
+                    msg =>
+                        msg.author.id ===
+                            client.user.id &&
+                        msg.embeds.length > 0 &&
+                        msg.embeds[0].title ===
+                            "Voice Channel"
+                );
+
+            if (botInterface) {
+                data.interfaceMessageId =
+                    botInterface.id;
+
+                saveDB();
+
+                await botInterface.edit({
+                    embeds: [embed],
+                    components: []
+                });
+
+                return;
+            }
+        }
+
+        // ==================================================
+        // SEND ONE INTERFACE
+        // ==================================================
 
         const message =
             await channel.send({
@@ -510,6 +868,10 @@ async function updateVCInterface(
         console.error(
             "VC interface error:",
             error
+        );
+    } finally {
+        interfaceLocks.delete(
+            channel.id
         );
     }
 }
@@ -543,6 +905,30 @@ async function createPersonalVC(
             ChannelType.GuildVoice
     ) {
         return null;
+    }
+
+    // Don't create another VC if one is already being made
+    for (
+        const [
+            channelId,
+            vcData
+        ] of tempVCs
+    ) {
+        if (
+            vcData.guildId ===
+                member.guild.id &&
+            vcData.ownerId ===
+                member.id
+        ) {
+            const existing =
+                member.guild.channels.cache.get(
+                    channelId
+                );
+
+            if (existing) {
+                return existing;
+            }
+        }
     }
 
     const category =
@@ -619,6 +1005,25 @@ async function createPersonalVC(
         vcData
     );
 
+    await sendLog(
+        member.guild,
+        "voice",
+        "Voice Channel Created",
+        `${member} created ${channel}.`,
+        [
+            {
+                name: "Owner",
+                value:
+                    `${member.user.tag} (${member.id})`
+            },
+            {
+                name: "Channel",
+                value:
+                    `${channel.name} (${channel.id})`
+            }
+        ]
+    );
+
     await member.voice
         .setChannel(
             channel
@@ -657,12 +1062,33 @@ async function deleteEmptyVC(
         return;
     }
 
+    const ownerId =
+        data.ownerId;
+
+    await sendLog(
+        channel.guild,
+        "voice",
+        "Voice Channel Deleted",
+        `The empty voice channel **${channel.name}** was deleted.`,
+        [
+            {
+                name: "Previous Owner",
+                value:
+                    `<@${ownerId}>`
+            }
+        ]
+    );
+
     await channel.delete()
         .catch(
             () => {}
         );
 
     tempVCs.delete(
+        channel.id
+    );
+
+    interfaceLocks.delete(
         channel.id
     );
 }
@@ -818,6 +1244,25 @@ async function handleFilteredMessage(
             message.author.id
         ];
 
+    await sendLog(
+        message.guild,
+        "mod",
+        "Filtered Message",
+        `${message.author} sent a filtered message.`,
+        [
+            {
+                name: "Strikes",
+                value:
+                    String(strikes)
+            },
+            {
+                name: "Channel",
+                value:
+                    `${message.channel}`
+            }
+        ]
+    );
+
     if (
         strikes >=
         data.filters.maxStrikes
@@ -839,30 +1284,6 @@ async function handleFilteredMessage(
     }
 
     saveDB();
-
-    if (
-        data.filters.logChannelId
-    ) {
-        const logChannel =
-            message.guild.channels.cache.get(
-                data.filters.logChannelId
-            );
-
-        if (
-            logChannel?.isTextBased()
-        ) {
-            await logChannel.send({
-                embeds: [
-                    infoEmbed(
-                        "Filtered Message",
-                        `User: ${message.author}\nStrikes: ${strikes}`
-                    )
-                ]
-            }).catch(
-                () => {}
-            );
-        }
-    }
 
     return true;
 }
@@ -1020,6 +1441,13 @@ client.on(
 
                     saveDB();
 
+                    await sendLog(
+                        message.guild,
+                        "mod",
+                        "Filter Enabled",
+                        `${member} enabled the message filter.`
+                    );
+
                     return message.reply({
                         embeds: [
                             successEmbed(
@@ -1038,6 +1466,13 @@ client.on(
                         false;
 
                     saveDB();
+
+                    await sendLog(
+                        message.guild,
+                        "mod",
+                        "Filter Disabled",
+                        `${member} disabled the message filter.`
+                    );
 
                     return message.reply({
                         embeds: [
@@ -1080,6 +1515,13 @@ client.on(
                     }
 
                     saveDB();
+
+                    await sendLog(
+                        message.guild,
+                        "mod",
+                        "Filter Word Added",
+                        `${member} added a filtered word.`
+                    );
 
                     return message.reply({
                         embeds: [
@@ -1279,6 +1721,10 @@ client.on(
                         });
                     }
 
+                    await setupLogChannels(
+                        message.guild
+                    );
+
                     const existing =
                         data.jtc.channelId
                             ? message.guild.channels.cache.get(
@@ -1291,29 +1737,49 @@ client.on(
                         existing.type ===
                             ChannelType.GuildVoice
                     ) {
+                        await sendLog(
+                            message.guild,
+                            "server",
+                            "Voice System Checked",
+                            `${member} checked the voice system.`
+                        );
+
                         return message.reply({
                             embeds: [
                                 infoEmbed(
                                     "Voice System",
-                                    `Join To Create is already configured: ${existing}`
+                                    `Join To Create is already configured: ${existing}\n\nLogging channels are also configured.`
                                 )
                             ]
                         });
                     }
 
                     let category =
-                        message.guild.channels.cache.find(
-                            channel =>
-                                channel.type ===
-                                    ChannelType.GuildCategory &&
-                                channel.name.toLowerCase() ===
-                                    "voice"
-                        );
+                        data.jtc.categoryId
+                            ? message.guild.channels.cache.get(
+                                data.jtc.categoryId
+                            )
+                            : null;
+
+                    if (
+                        !category
+                    ) {
+                        category =
+                            message.guild.channels.cache.find(
+                                channel =>
+                                    channel.type ===
+                                        ChannelType.GuildCategory &&
+                                    channel.name.toLowerCase() ===
+                                        "voice"
+                            );
+                    }
 
                     if (!category) {
                         category =
                             await message.guild.channels.create({
-                                name: "Voice",
+                                name:
+                                    "Voice",
+
                                 type:
                                     ChannelType.GuildCategory
                             }).catch(
@@ -1358,11 +1824,41 @@ client.on(
 
                     saveDB();
 
+                    await sendLog(
+                        message.guild,
+                        "server",
+                        "Voice System Setup",
+                        `${member} configured the voice system.`,
+                        [
+                            {
+                                name:
+                                    "Join To Create",
+                                value:
+                                    `${jtc}`
+                            },
+                            {
+                                name:
+                                    "Logs",
+                                value:
+                                    data.logs.categoryId
+                                        ? `<#${data.logs.categoryId}>`
+                                        : "Not configured"
+                            }
+                        ]
+                    );
+
                     return message.reply({
                         embeds: [
                             successEmbed(
                                 "Voice System Ready",
-                                `Join ${jtc} to create your personal VC.`
+                                [
+                                    `Join ${jtc} to create your personal VC.`,
+                                    "",
+                                    "**Logs Created**",
+                                    `Server Logs: <#${data.logs.serverChannelId}>`,
+                                    `Mod Logs: <#${data.logs.modChannelId}>`,
+                                    `Voice Logs: <#${data.logs.voiceChannelId}>`
+                                ].join("\n")
                             )
                         ]
                     });
@@ -1455,6 +1951,13 @@ client.on(
                             );
                     }
 
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Kick",
+                        `${member} kicked ${target} from ${voiceChannel}.`
+                    );
+
                     return message.reply({
                         embeds: [
                             successEmbed(
@@ -1498,6 +2001,13 @@ client.on(
                             );
                     }
 
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Disconnect",
+                        `${member} disconnected ${target} from ${voiceChannel}.`
+                    );
+
                     return message.reply({
                         embeds: [
                             successEmbed(
@@ -1533,6 +2043,13 @@ client.on(
                     await applyVCBan(
                         voiceChannel,
                         target.id
+                    );
+
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Ban",
+                        `${member} banned ${target} from ${voiceChannel}.`
                     );
 
                     await updateVCInterface(
@@ -1595,6 +2112,17 @@ client.on(
                             );
                     }
 
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Reject",
+                        `${member} rejected ${target} from ${voiceChannel}.`
+                    );
+
+                    await updateVCInterface(
+                        voiceChannel
+                    );
+
                     return message.reply({
                         embeds: [
                             successEmbed(
@@ -1642,6 +2170,13 @@ client.on(
                         }
                     ).catch(
                         () => {}
+                    );
+
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Permit",
+                        `${member} permitted ${target} in ${voiceChannel}.`
                     );
 
                     return message.reply({
@@ -1707,6 +2242,13 @@ client.on(
                             );
                     }
 
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC STFU",
+                        `${member} muted ${target} in ${voiceChannel}.`
+                    );
+
                     return message.reply({
                         embeds: [
                             successEmbed(
@@ -1770,6 +2312,13 @@ client.on(
                             );
                     }
 
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Unmute",
+                        `${member} unmuted ${target} in ${voiceChannel}.`
+                    );
+
                     return message.reply({
                         embeds: [
                             successEmbed(
@@ -1826,6 +2375,13 @@ client.on(
                         );
                     }
 
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Locked",
+                        `${member} locked ${voiceChannel}.`
+                    );
+
                     await updateVCInterface(
                         voiceChannel
                     );
@@ -1873,6 +2429,13 @@ client.on(
                         );
                     }
 
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Unlocked",
+                        `${member} unlocked ${voiceChannel}.`
+                    );
+
                     await updateVCInterface(
                         voiceChannel
                     );
@@ -1911,6 +2474,13 @@ client.on(
 
                     vcData.ownerId =
                         target.id;
+
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Ownership Transfer",
+                        `${member} transferred ${voiceChannel} to ${target}.`
+                    );
 
                     await updateVCInterface(
                         voiceChannel
@@ -1952,6 +2522,13 @@ client.on(
                     vcData.ownerId =
                         member.id;
 
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Claimed",
+                        `${member} claimed ${voiceChannel}.`
+                    );
+
                     await updateVCInterface(
                         voiceChannel
                     );
@@ -1989,6 +2566,13 @@ client.on(
 
                     vcData.ownerId =
                         member.id;
+
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Force Claimed",
+                        `${member} force claimed ${voiceChannel}.`
+                    );
 
                     await updateVCInterface(
                         voiceChannel
@@ -2051,8 +2635,30 @@ client.on(
                         });
                     }
 
+                    const oldName =
+                        voiceChannel.name;
+
                     await voiceChannel.setName(
                         cleanName
+                    );
+
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Renamed",
+                        `${member} renamed a VC.`,
+                        [
+                            {
+                                name: "Old Name",
+                                value:
+                                    oldName
+                            },
+                            {
+                                name: "New Name",
+                                value:
+                                    cleanName
+                            }
+                        ]
                     );
 
                     await updateVCInterface(
@@ -2101,6 +2707,13 @@ client.on(
 
                     await voiceChannel.setUserLimit(
                         amount
+                    );
+
+                    await sendLog(
+                        message.guild,
+                        "voice",
+                        "VC Limit Changed",
+                        `${member} changed the limit of ${voiceChannel} to ${amount === 0 ? "unlimited" : amount}.`
                     );
 
                     await updateVCInterface(
@@ -2213,6 +2826,20 @@ client.on(
                     });
                 }
 
+                await sendLog(
+                    message.guild,
+                    "mod",
+                    "Member Banned",
+                    `${member} banned ${target}.`,
+                    [
+                        {
+                            name: "Reason",
+                            value:
+                                reason
+                        }
+                    ]
+                );
+
                 return message.reply({
                     embeds: [
                         successEmbed(
@@ -2303,6 +2930,13 @@ client.on(
                     message.guild,
                     "unbanned",
                     "Your ban was removed."
+                );
+
+                await sendLog(
+                    message.guild,
+                    "mod",
+                    "Member Unbanned",
+                    `${member} unbanned ${ban.user.tag}.`
                 );
 
                 return message.reply({
@@ -2442,6 +3076,21 @@ client.on(
                     () => {}
                 );
 
+                await sendLog(
+                    message.guild,
+                    "mod",
+                    "Member Kicked",
+                    `${member} kicked ${target}.`,
+                    [
+                        {
+                            name:
+                                "Reason",
+                            value:
+                                reason
+                        }
+                    ]
+                );
+
                 return message.reply({
                     embeds: [
                         successEmbed(
@@ -2550,6 +3199,27 @@ client.on(
                     () => {}
                 );
 
+                await sendLog(
+                    message.guild,
+                    "mod",
+                    "Member Timed Out",
+                    `${member} timed out ${target}.`,
+                    [
+                        {
+                            name:
+                                "Duration",
+                            value:
+                                `${minutes} minutes`
+                        },
+                        {
+                            name:
+                                "Reason",
+                            value:
+                                reason
+                        }
+                    ]
+                );
+
                 return message.reply({
                     embeds: [
                         successEmbed(
@@ -2623,6 +3293,13 @@ client.on(
                     message.guild,
                     "untimeout",
                     "Your timeout was removed."
+                );
+
+                await sendLog(
+                    message.guild,
+                    "mod",
+                    "Timeout Removed",
+                    `${member} removed the timeout from ${target}.`
                 );
 
                 return message.reply({
@@ -2701,6 +3378,21 @@ client.on(
                     () => {}
                 );
 
+                await sendLog(
+                    message.guild,
+                    "mod",
+                    "Forever Ban",
+                    `${member} permanently banned ${target}.`,
+                    [
+                        {
+                            name:
+                                "Reason",
+                            value:
+                                reason
+                        }
+                    ]
+                );
+
                 return message.reply({
                     embeds: [
                         successEmbed(
@@ -2759,6 +3451,13 @@ client.on(
                 ] = rank;
 
                 saveDB();
+
+                await sendLog(
+                    message.guild,
+                    "mod",
+                    "Rank Changed",
+                    `${member} changed ${target}'s rank to **${rank}**.`
+                );
 
                 return message.reply({
                     embeds: [
@@ -2820,6 +3519,13 @@ client.on(
 
                     saveDB();
 
+                    await sendLog(
+                        message.guild,
+                        "mod",
+                        "Godmode Enabled",
+                        `${member} enabled godmode for ${target}.`
+                    );
+
                     return message.reply({
                         embeds: [
                             successEmbed(
@@ -2836,6 +3542,13 @@ client.on(
                 );
 
                 saveDB();
+
+                await sendLog(
+                    message.guild,
+                    "mod",
+                    "Godmode Disabled",
+                    `${member} disabled godmode for ${target}.`
+                );
 
                 return message.reply({
                     embeds: [
@@ -2898,6 +3611,13 @@ client.on(
                     .catch(
                         () => {}
                     );
+
+                await sendLog(
+                    message.guild,
+                    "mod",
+                    "Messages Purged",
+                    `${member} purged **${amount}** messages from ${message.channel}.`
+                );
 
                 return;
             }
@@ -3001,6 +3721,13 @@ client.on(
                             userId
                         )
                     ) {
+                        await sendLog(
+                            guild,
+                            "voice",
+                            "VC Entry Rejected",
+                            `${newState.member} attempted to join ${channel} but was rejected.`
+                        );
+
                         await newState.member.voice
                             .disconnect()
                             .catch(
@@ -3024,6 +3751,13 @@ client.on(
                                 () => {}
                             );
                     }
+
+                    await sendLog(
+                        guild,
+                        "voice",
+                        "Member Joined VC",
+                        `${newState.member} joined ${channel}.`
+                    );
 
                     await updateVCInterface(
                         channel
@@ -3052,6 +3786,17 @@ client.on(
                         );
 
                     if (vcData) {
+                        if (
+                            oldState.member
+                        ) {
+                            await sendLog(
+                                guild,
+                                "voice",
+                                "Member Left VC",
+                                `${oldState.member} left ${oldChannel}.`
+                            );
+                        }
+
                         await updateVCInterface(
                             oldChannel
                         );
@@ -3165,6 +3910,7 @@ async function getAuditExecutor(
         }
 
         return entry.executor;
+
     } catch {
         return null;
     }
@@ -3219,6 +3965,21 @@ async function securityPunish(
     }
 
     saveDB();
+
+    await sendLog(
+        guild,
+        "mod",
+        "Anti-Nuke Action",
+        `${user.tag} was banned by server protection.`,
+        [
+            {
+                name:
+                    "Reason",
+                value:
+                    reason
+            }
+        ]
+    );
 }
 
 // ======================================================
@@ -3267,6 +4028,13 @@ client.on(
                 executor.id,
                 "channelCreate"
             );
+
+        await sendLog(
+            channel.guild,
+            "server",
+            "Channel Created",
+            `${executor} created ${channel}.`
+        );
 
         if (
             count >= 5
@@ -3332,6 +4100,21 @@ client.on(
                 "channelDelete"
             );
 
+        await sendLog(
+            channel.guild,
+            "server",
+            "Channel Deleted",
+            `${executor} deleted a channel.`,
+            [
+                {
+                    name:
+                        "Channel",
+                    value:
+                        channel.name
+                }
+            ]
+        );
+
         if (
             count >= 3
         ) {
@@ -3386,6 +4169,13 @@ client.on(
                 executor.id,
                 "roleCreate"
             );
+
+        await sendLog(
+            role.guild,
+            "server",
+            "Role Created",
+            `${executor} created the role **${role.name}**.`
+        );
 
         if (
             count >= 5
@@ -3447,6 +4237,13 @@ client.on(
                 "roleDelete"
             );
 
+        await sendLog(
+            role.guild,
+            "server",
+            "Role Deleted",
+            `${executor} deleted the role **${role.name}**.`
+        );
+
         if (
             count >= 3
         ) {
@@ -3484,6 +4281,13 @@ client.on(
                 "Forever ban protection"
         }).catch(
             () => {}
+        );
+
+        await sendLog(
+            member.guild,
+            "mod",
+            "Forever Ban Triggered",
+            `${member} attempted to join but is permanently banned.`
         );
     }
 );
@@ -3552,6 +4356,7 @@ client.once(
                         ActivityType.Watching
                 }
             ],
+
             status:
                 "online"
         });
