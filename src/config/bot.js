@@ -1,10 +1,6 @@
-```js
 import { logger } from '../utils/logger.js';
 
 export const botConfig = {
-  // =========================
-  // BOT PRESENCE
-  // =========================
   presence: {
     status: "online",
 
@@ -17,9 +13,6 @@ export const botConfig = {
     ],
   },
 
-  // =========================
-  // COMMAND BEHAVIOR
-  // =========================
   commands: {
     owners:
       process.env.OWNER_IDS?.split(",")
@@ -34,14 +27,14 @@ export const botConfig = {
 
     maintenanceMode: process.env.MAINTENANCE_MODE === "true",
 
-    // PREFIX COMMANDS
-    // Examples: -help, -ping, -commands
+    // PREFIX
+    // Commands will be:
+    // -help
+    // -ping
+    // -commands
     prefix: process.env.PREFIX || "-",
   },
 
-  // =========================
-  // APPLICATIONS SYSTEM
-  // =========================
   applications: {
     defaultQuestions: [
       { question: "What is your name?", required: true },
@@ -56,17 +49,12 @@ export const botConfig = {
     },
 
     applicationCooldown: 24,
-
     deleteDeniedAfter: 7,
-
     deleteApprovedAfter: 30,
 
     managerRoles: [],
   },
 
-  // =========================
-  // EMBED COLORS & BRANDING
-  // =========================
   embeds: {
     colors: {
       primary: "#336699",
@@ -127,9 +115,6 @@ export const botConfig = {
     },
   },
 
-  // =========================
-  // ECONOMY SETTINGS
-  // =========================
   economy: {
     currency: {
       name: "coins",
@@ -138,9 +123,7 @@ export const botConfig = {
     },
 
     startingBalance: 0,
-
     baseBankCapacity: 100000,
-
     dailyAmount: 100,
 
     workMin: 10,
@@ -157,18 +140,11 @@ export const botConfig = {
     },
 
     robSuccessRate: 0.4,
-
     robFailJailTime: 3600000,
   },
 
-  // =========================
-  // SHOP SETTINGS
-  // =========================
   shop: {},
 
-  // =========================
-  // TICKET SYSTEM
-  // =========================
   tickets: {
     defaultCategory: null,
 
@@ -207,15 +183,10 @@ export const botConfig = {
     },
 
     defaultPriority: "none",
-
     archiveCategory: null,
-
     logChannel: null,
   },
 
-  // =========================
-  // GIVEAWAY SETTINGS
-  // =========================
   giveaways: {
     defaultDuration: 86400000,
 
@@ -226,24 +197,15 @@ export const botConfig = {
     maximumDuration: 2592000000,
 
     allowedRoles: [],
-
     bypassRoles: [],
   },
 
-  // =========================
-  // BIRTHDAY SETTINGS
-  // =========================
   birthday: {
     defaultRole: null,
-
     announcementChannel: null,
-
     timezone: "UTC",
   },
 
-  // =========================
-  // VERIFICATION SETTINGS
-  // =========================
   verification: {
     defaultMessage:
       "Click the button below to verify yourself and gain access to the server!",
@@ -281,7 +243,6 @@ export const botConfig = {
     attemptWindow: 60000,
 
     maxCooldownEntries: 10000,
-
     maxAttemptEntries: 10000,
 
     cooldownCleanupInterval: 300000,
@@ -295,9 +256,6 @@ export const botConfig = {
     keepAuditTrail: true,
   },
 
-  // =========================
-  // WELCOME / GOODBYE
-  // =========================
   welcome: {
     defaultWelcomeMessage:
       "Welcome {user} to {server}! We now have {memberCount} members!",
@@ -310,17 +268,11 @@ export const botConfig = {
     defaultGoodbyeChannel: null,
   },
 
-  // =========================
-  // COUNTER CHANNELS
-  // =========================
   counters: {
     defaults: {
       name: "{name} Counter",
-
       description: "Server {name} counter",
-
       type: "voice",
-
       channelName: "{name}-{count}",
     },
 
@@ -336,18 +288,14 @@ export const botConfig = {
 
     messages: {
       created: "✅ Created counter **{name}**",
-
       deleted: "🗑️ Deleted counter **{name}**",
-
       updated: "🔄 Updated counter **{name}**",
     },
 
     types: {
       members: {
         name: "👥 Members",
-
-        description:
-          "Total members in the server",
+        description: "Total members in the server",
 
         getCount: (guild) =>
           guild.memberCount.toString(),
@@ -355,9 +303,7 @@ export const botConfig = {
 
       bots: {
         name: "🤖 Bots",
-
-        description:
-          "Total bot accounts in the server",
+        description: "Total bot accounts in the server",
 
         getCount: (guild) =>
           guild.members.cache
@@ -368,9 +314,7 @@ export const botConfig = {
 
       members_only: {
         name: "👤 Humans",
-
-        description:
-          "Total human members (non-bots)",
+        description: "Total human members (non-bots)",
 
         getCount: (guild) =>
           guild.members.cache
@@ -381,9 +325,6 @@ export const botConfig = {
     },
   },
 
-  // =========================
-  // GENERIC BOT MESSAGES
-  // =========================
   messages: {
     noPermission:
       "You do not have permission to use this command.",
@@ -404,9 +345,6 @@ export const botConfig = {
       "The bot is currently in maintenance mode.",
   },
 
-  // =========================
-  // FEATURE TOGGLES
-  // =========================
   features: {
     economy: true,
     leveling: true,
@@ -457,10 +395,6 @@ export function validateConfig(config) {
     logger.debug(
       "GUILD_ID exists:",
       !!process.env.GUILD_ID
-    );
-    logger.debug(
-      "POSTGRES_HOST exists:",
-      !!process.env.POSTGRES_HOST
     );
     logger.debug(
       "NODE_ENV:",
@@ -583,9 +517,7 @@ export function isBotOwner(userId) {
     return false;
   }
 
-  return getBotOwners().includes(
-    String(userId)
-  );
+  return getBotOwners().includes(String(userId));
 }
 
 // =========================
@@ -593,33 +525,22 @@ export function isBotOwner(userId) {
 // =========================
 
 export function isMaintenanceMode() {
-  return (
-    botConfig.commands?.maintenanceMode === true
-  );
+  return botConfig.commands?.maintenanceMode === true;
 }
 
 // =========================
 // BOT MESSAGES
 // =========================
 
-export function getBotMessage(
-  key,
-  replacements = {}
-) {
-  let message =
-    botConfig.messages?.[key] || key;
+export function getBotMessage(key, replacements = {}) {
+  let message = botConfig.messages?.[key] || key;
 
-  for (const [
-    placeholder,
-    value,
-  ] of Object.entries(replacements)) {
-    message = message.replace(
-      new RegExp(
-        `\\{${placeholder}\\}`,
-        "g"
-      ),
-      String(value)
-    );
+  for (const [placeholder, value] of Object.entries(replacements)) {
+    const searchText = `{${placeholder}}`;
+
+    message = message
+      .split(searchText)
+      .join(String(value));
   }
 
   return message;
@@ -634,16 +555,11 @@ export function isFeatureEnabled(featureKey) {
     return true;
   }
 
-  return (
-    botConfig.features?.[featureKey] !== false
-  );
+  return botConfig.features?.[featureKey] !== false;
 }
 
-export function isCommandCategoryEnabled(
-  category
-) {
-  const normalized =
-    normalizeCategoryKey(category);
+export function isCommandCategoryEnabled(category) {
+  const normalized = normalizeCategoryKey(category);
 
   if (
     !normalized ||
@@ -653,9 +569,7 @@ export function isCommandCategoryEnabled(
   }
 
   const featureKey =
-    COMMAND_CATEGORY_FEATURE_MAP[
-      normalized
-    ];
+    COMMAND_CATEGORY_FEATURE_MAP[normalized];
 
   if (!featureKey) {
     return true;
@@ -668,12 +582,9 @@ export function isCommandCategoryEnabled(
 // APPLICATION COLORS
 // =========================
 
-export function getApplicationStatusColor(
-  status
-) {
+export function getApplicationStatusColor(status) {
   const colors =
-    botConfig.applications
-      ?.statusColors || {};
+    botConfig.applications?.statusColors || {};
 
   const hex = colors[status];
 
@@ -694,8 +605,7 @@ export function getApplicationStatusColor(
 
 export function getDefaultApplicationQuestions() {
   return (
-    botConfig.applications
-      ?.defaultQuestions || []
+    botConfig.applications?.defaultQuestions || []
   )
     .map((entry) =>
       typeof entry === "string"
@@ -725,6 +635,10 @@ export function getColor(
       path.replace("#", ""),
       16
     );
+  }
+
+  if (typeof path !== "string") {
+    return getColor(fallback);
   }
 
   const result = path
@@ -776,4 +690,3 @@ export function getRandomColor() {
 // =========================
 
 export default botConfig;
-```
