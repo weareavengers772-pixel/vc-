@@ -40,11 +40,8 @@ if (!fs.existsSync(DATA_DIR)) {
 function defaultGuildData() {
     return {
         ranks: {},
-
         foreverBanned: [],
-
         godmode: [],
-
         vouches: {},
 
         jtc: {
@@ -106,7 +103,6 @@ function loadDatabase() {
         if (!database || typeof database !== "object") {
             database = {};
         }
-
     } catch (error) {
         console.error("Database load error:", error);
         database = {};
@@ -131,7 +127,6 @@ function getGuildData(guildId) {
     }
 
     const data = database[guildId];
-
     const defaults = defaultGuildData();
 
     for (const key of Object.keys(defaults)) {
@@ -202,7 +197,6 @@ function normalizeRank(rank) {
         executive: "executive",
         exec: "executive",
         coowner: "coowner",
-        "co-owner": "coowner",
         owner: "owner",
         god: "god",
         godmode: "god",
@@ -217,18 +211,20 @@ function getRank(member) {
         return "member";
     }
 
+    // Server owner always has Founder
     if (member.guild.ownerId === member.id) {
         return "founder";
     }
 
     const data = getGuildData(member.guild.id);
 
+    // Explicit rank assignment
     if (data.ranks[member.id]) {
         return normalizeRank(data.ranks[member.id]) || "member";
     }
 
     let highestRank = "member";
-    let highestLevel = 1;
+    let highestLevel = RANKS.member;
 
     const roleMappings = [
         ["founder", data.roles.founder],
@@ -287,14 +283,14 @@ function isTrustedExecutor(member) {
 }
 
 // ======================================================
-// BLEED-STYLE RESPONSES
+// VC+ COMMAND RESPONSE STYLE
 // ======================================================
 
-function bleedEmbed(message) {
+function vcEmbed(message) {
     return new EmbedBuilder()
         .setColor(0x000000)
         .setAuthor({
-            name: "bleed"
+            name: "VC+"
         })
         .setDescription(`✦ ${message}`)
         .setFooter({
@@ -305,7 +301,7 @@ function bleedEmbed(message) {
 async function replySuccess(message, title, description) {
     return message.reply({
         embeds: [
-            bleedEmbed(description)
+            vcEmbed(description)
         ]
     });
 }
@@ -313,7 +309,7 @@ async function replySuccess(message, title, description) {
 async function replyError(message, title, description) {
     return message.reply({
         embeds: [
-            bleedEmbed(description)
+            vcEmbed(description)
         ]
     });
 }
@@ -321,7 +317,7 @@ async function replyError(message, title, description) {
 async function replyInfo(message, title, description) {
     return message.reply({
         embeds: [
-            bleedEmbed(description)
+            vcEmbed(description)
         ]
     });
 }
@@ -329,7 +325,7 @@ async function replyInfo(message, title, description) {
 async function replyWarning(message, title, description) {
     return message.reply({
         embeds: [
-            bleedEmbed(description)
+            vcEmbed(description)
         ]
     });
 }
@@ -342,12 +338,13 @@ function helpEmbed() {
     return new EmbedBuilder()
         .setColor(0x000000)
         .setAuthor({
-            name: "bleed"
+            name: "VC+"
         })
         .setDescription(`
 ✦ **VC+ COMMANDS**
 
 **VOICE CHANNELS**
+
 \`${PREFIX}vc setup\`
 \`${PREFIX}vc kick @user\`
 \`${PREFIX}vc disconnect @user\`
@@ -365,6 +362,7 @@ function helpEmbed() {
 \`${PREFIX}vc unstfu @user\`
 
 **MODERATION**
+
 \`${PREFIX}ban @user [reason]\`
 \`${PREFIX}unban <userId>\`
 \`${PREFIX}banlist\`
@@ -376,10 +374,12 @@ function helpEmbed() {
 \`${PREFIX}clear <amount>\`
 
 **RANKS**
+
 \`${PREFIX}rank @user <rank>\`
 \`${PREFIX}godmode on/off\`
 
 **FILTER**
+
 \`${PREFIX}filter on/off\`
 \`${PREFIX}filter add <word>\`
 \`${PREFIX}filter remove <word>\`
@@ -389,10 +389,12 @@ function helpEmbed() {
 \`${PREFIX}filter reset @user\`
 
 **GENERAL**
+
 \`${PREFIX}help\`
 \`${PREFIX}commands\`
 
 ━━━━━━━━━━━━━━━━━━━━
+
 **RANK HIERARCHY**
 
 Founder
@@ -412,7 +414,7 @@ Member
 }
 
 // ======================================================
-// LOGGING
+// LOG SYSTEM
 // ======================================================
 
 async function createLogSystem(guild) {
@@ -430,10 +432,13 @@ async function createLogSystem(guild) {
         category = await guild.channels.create({
             name: "VC+ Logs",
             type: ChannelType.GuildCategory,
+
             permissionOverwrites: [
                 {
                     id: guild.roles.everyone.id,
-                    deny: [PermissionFlagsBits.ViewChannel]
+                    deny: [
+                        PermissionFlagsBits.ViewChannel
+                    ]
                 }
             ]
         });
@@ -454,15 +459,19 @@ async function createLogSystem(guild) {
             name: "server-logs",
             type: ChannelType.GuildText,
             parent: category.id,
+
             permissionOverwrites: [
                 {
                     id: guild.roles.everyone.id,
-                    deny: [PermissionFlagsBits.ViewChannel]
+                    deny: [
+                        PermissionFlagsBits.ViewChannel
+                    ]
                 }
             ]
         });
 
-        data.logs.serverLogChannelId = serverLogs.id;
+        data.logs.serverLogChannelId =
+            serverLogs.id;
     }
 
     let modLogs = null;
@@ -478,15 +487,19 @@ async function createLogSystem(guild) {
             name: "mod-logs",
             type: ChannelType.GuildText,
             parent: category.id,
+
             permissionOverwrites: [
                 {
                     id: guild.roles.everyone.id,
-                    deny: [PermissionFlagsBits.ViewChannel]
+                    deny: [
+                        PermissionFlagsBits.ViewChannel
+                    ]
                 }
             ]
         });
 
-        data.logs.modLogChannelId = modLogs.id;
+        data.logs.modLogChannelId =
+            modLogs.id;
     }
 
     saveDatabase();
@@ -505,25 +518,26 @@ async function sendLog(
     moderation = false
 ) {
     try {
-        const data = getGuildData(guild.id);
+        const data =
+            getGuildData(guild.id);
 
-        const channelId = moderation
-            ? data.logs.modLogChannelId
-            : data.logs.serverLogChannelId;
-
-        if (!channelId) {
+        if (
+            !data.logs.serverLogChannelId ||
+            !data.logs.modLogChannelId
+        ) {
             await createLogSystem(guild);
         }
 
-        const refreshed = getGuildData(guild.id);
+        const refreshed =
+            getGuildData(guild.id);
 
-        const finalChannelId = moderation
-            ? refreshed.logs.modLogChannelId
-            : refreshed.logs.serverLogChannelId;
+        const channelId =
+            moderation
+                ? refreshed.logs.modLogChannelId
+                : refreshed.logs.serverLogChannelId;
 
-        const channel = guild.channels.cache.get(
-            finalChannelId
-        );
+        const channel =
+            guild.channels.cache.get(channelId);
 
         if (!channel) return;
 
@@ -532,7 +546,7 @@ async function sendLog(
                 new EmbedBuilder()
                     .setColor(0x000000)
                     .setAuthor({
-                        name: "bleed"
+                        name: "VC+"
                     })
                     .setDescription(
                         `✦ **${type}**\n${description}`
@@ -542,9 +556,11 @@ async function sendLog(
                     })
             ]
         });
-
     } catch (error) {
-        console.error("Log error:", error);
+        console.error(
+            "Log error:",
+            error
+        );
     }
 }
 
@@ -564,7 +580,9 @@ async function sendModerationDM(
             `✦ **${action}**`,
             "",
             `**Server:** ${guild.name}`,
-            `**Reason:** ${reason || "No reason provided."}`,
+            `**Reason:** ${
+                reason || "No reason provided."
+            }`,
             duration
                 ? `**Duration:** ${duration}`
                 : null
@@ -577,17 +595,18 @@ async function sendModerationDM(
                 new EmbedBuilder()
                     .setColor(0x000000)
                     .setAuthor({
-                        name: "bleed"
+                        name: "VC+"
                     })
-                    .setDescription(description)
+                    .setDescription(
+                        description
+                    )
                     .setFooter({
                         text: "VC+"
                     })
             ]
         });
-
     } catch {
-        // DMs disabled
+        // User has DMs disabled.
     }
 }
 
@@ -597,7 +616,10 @@ async function sendModerationDM(
 
 const tempVCs = new Map();
 
-function createVCData(guildId, ownerId) {
+function createVCData(
+    guildId,
+    ownerId
+) {
     return {
         guildId,
         ownerId,
@@ -615,8 +637,12 @@ function getVCData(channelId) {
     return tempVCs.get(channelId);
 }
 
-function isVCOwner(member, channel) {
-    const vcData = getVCData(channel.id);
+function isVCOwner(
+    member,
+    channel
+) {
+    const vcData =
+        getVCData(channel.id);
 
     if (!vcData) return false;
 
@@ -628,40 +654,50 @@ function isVCOwner(member, channel) {
 
 async function createPersonalVC(member) {
     const guild = member.guild;
-    const data = getGuildData(guild.id);
 
-    const category = data.jtc.categoryId
-        ? guild.channels.cache.get(
-            data.jtc.categoryId
-        )
-        : null;
+    const data =
+        getGuildData(guild.id);
 
-    const channel = await guild.channels.create({
-        name: `${member.user.username} VC`,
-        type: ChannelType.GuildVoice,
+    let category = null;
 
-        parent: category?.id || null,
+    if (data.jtc.categoryId) {
+        category =
+            guild.channels.cache.get(
+                data.jtc.categoryId
+            );
+    }
 
-        permissionOverwrites: [
-            {
-                id: guild.roles.everyone.id,
-                allow: [
-                    PermissionFlagsBits.Connect,
-                    PermissionFlagsBits.ViewChannel
-                ]
-            },
-            {
-                id: member.id,
-                allow: [
-                    PermissionFlagsBits.Connect,
-                    PermissionFlagsBits.ViewChannel,
-                    PermissionFlagsBits.Speak,
-                    PermissionFlagsBits.Stream,
-                    PermissionFlagsBits.UseVAD
-                ]
-            }
-        ]
-    });
+    const channel =
+        await guild.channels.create({
+            name: `${member.user.username} VC`,
+            type: ChannelType.GuildVoice,
+
+            parent:
+                category?.id || null,
+
+            permissionOverwrites: [
+                {
+                    id: guild.roles.everyone.id,
+
+                    allow: [
+                        PermissionFlagsBits.Connect,
+                        PermissionFlagsBits.ViewChannel
+                    ]
+                },
+
+                {
+                    id: member.id,
+
+                    allow: [
+                        PermissionFlagsBits.Connect,
+                        PermissionFlagsBits.ViewChannel,
+                        PermissionFlagsBits.Speak,
+                        PermissionFlagsBits.Stream,
+                        PermissionFlagsBits.UseVAD
+                    ]
+                }
+            ]
+        });
 
     tempVCs.set(
         channel.id,
@@ -672,7 +708,9 @@ async function createPersonalVC(member) {
     );
 
     try {
-        await member.voice.setChannel(channel);
+        await member.voice.setChannel(
+            channel
+        );
     } catch {}
 
     await sendLog(
@@ -691,7 +729,8 @@ async function createPersonalVC(member) {
 async function cleanupVC(channel) {
     if (!channel) return;
 
-    const vcData = getVCData(channel.id);
+    const vcData =
+        getVCData(channel.id);
 
     if (!vcData) return;
 
@@ -715,11 +754,12 @@ async function cleanupVC(channel) {
 }
 
 // ======================================================
-// VC COMMAND PERMISSION
+// VC OWNER CHECK
 // ======================================================
 
 function requireVCOwner(message) {
-    const channel = message.member?.voice?.channel;
+    const channel =
+        message.member?.voice?.channel;
 
     if (!channel) {
         replyError(
@@ -731,7 +771,8 @@ function requireVCOwner(message) {
         return null;
     }
 
-    const vcData = getVCData(channel.id);
+    const vcData =
+        getVCData(channel.id);
 
     if (!vcData) {
         replyError(
@@ -743,7 +784,12 @@ function requireVCOwner(message) {
         return null;
     }
 
-    if (!isVCOwner(message.member, channel)) {
+    if (
+        !isVCOwner(
+            message.member,
+            channel
+        )
+    ) {
         replyError(
             message,
             "Permission Denied",
@@ -761,13 +807,18 @@ function requireVCOwner(message) {
 // ======================================================
 
 async function handleFilter(message) {
-    if (!message.guild) return false;
+    if (!message.guild) {
+        return false;
+    }
 
-    if (message.author.bot) return false;
+    if (message.author.bot) {
+        return false;
+    }
 
-    const data = getGuildData(
-        message.guild.id
-    );
+    const data =
+        getGuildData(
+            message.guild.id
+        );
 
     if (!data.filter.enabled) {
         return false;
@@ -789,17 +840,19 @@ async function handleFilter(message) {
         message.content.toLowerCase();
 
     const foundWord =
-        data.filter.words.find(word =>
-            content.includes(
-                word.toLowerCase()
-            )
+        data.filter.words.find(
+            word =>
+                content.includes(
+                    word.toLowerCase()
+                )
         );
 
     if (!foundWord) {
         return false;
     }
 
-    const userId = message.author.id;
+    const userId =
+        message.author.id;
 
     data.filter.strikes[userId] =
         (data.filter.strikes[userId] || 0) + 1;
@@ -854,14 +907,22 @@ client.on(
     "messageCreate",
     async message => {
         try {
-            if (!message.guild) return;
+            if (!message.guild) {
+                return;
+            }
 
-            if (message.author.bot) return;
+            if (message.author.bot) {
+                return;
+            }
 
             const filtered =
-                await handleFilter(message);
+                await handleFilter(
+                    message
+                );
 
-            if (filtered) return;
+            if (filtered) {
+                return;
+            }
 
             if (
                 !message.content.startsWith(
@@ -880,7 +941,9 @@ client.on(
             const command =
                 args.shift()?.toLowerCase();
 
-            if (!command) return;
+            if (!command) {
+                return;
+            }
 
             // ==================================================
             // HELP
@@ -891,7 +954,9 @@ client.on(
                 command === "commands"
             ) {
                 return message.reply({
-                    embeds: [helpEmbed()]
+                    embeds: [
+                        helpEmbed()
+                    ]
                 });
             }
 
@@ -901,7 +966,8 @@ client.on(
 
             if (
                 command === "vc" &&
-                args[0]?.toLowerCase() === "setup"
+                args[0]?.toLowerCase() ===
+                    "setup"
             ) {
                 if (
                     !isTrustedExecutor(
@@ -936,7 +1002,8 @@ client.on(
                         channel =>
                             channel.type ===
                                 ChannelType.GuildCategory &&
-                            channel.name.toLowerCase() ===
+                            channel.name
+                                .toLowerCase() ===
                                 "voice channels"
                     );
 
@@ -1002,9 +1069,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // KICK
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand === "kick"
@@ -1051,9 +1118,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // DISCONNECT
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand ===
@@ -1090,9 +1157,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
-                // BAN
-                // ----------------------------------------------
+                // ------------------------------------------------
+                // VC BAN
+                // ------------------------------------------------
 
                 if (
                     subcommand === "ban"
@@ -1124,18 +1191,28 @@ client.on(
                         target.id
                     );
 
+                    vcData.rejected.delete(
+                        target.id
+                    );
+
+                    vcData.permitted.delete(
+                        target.id
+                    );
+
                     try {
                         await target.voice.setChannel(
                             null
                         );
                     } catch {}
 
-                    await channel.permissionOverwrites.edit(
-                        target.id,
-                        {
-                            Connect: false
-                        }
-                    );
+                    try {
+                        await channel.permissionOverwrites.edit(
+                            target.id,
+                            {
+                                Connect: false
+                            }
+                        );
+                    } catch {}
 
                     return replySuccess(
                         message,
@@ -1144,9 +1221,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // REJECT
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand ===
@@ -1179,6 +1256,10 @@ client.on(
                         target.id
                     );
 
+                    vcData.permitted.delete(
+                        target.id
+                    );
+
                     try {
                         await channel.permissionOverwrites.edit(
                             target.id,
@@ -1195,9 +1276,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // PERMIT
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand ===
@@ -1255,9 +1336,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // LOCK
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand === "lock"
@@ -1276,12 +1357,14 @@ client.on(
 
                     vcData.locked = true;
 
-                    await channel.permissionOverwrites.edit(
-                        message.guild.roles.everyone.id,
-                        {
-                            Connect: false
-                        }
-                    );
+                    try {
+                        await channel.permissionOverwrites.edit(
+                            message.guild.roles.everyone.id,
+                            {
+                                Connect: false
+                            }
+                        );
+                    } catch {}
 
                     return replySuccess(
                         message,
@@ -1290,12 +1373,13 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // UNLOCK
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
-                    subcommand === "unlock"
+                    subcommand ===
+                    "unlock"
                 ) {
                     const channel =
                         requireVCOwner(
@@ -1311,12 +1395,14 @@ client.on(
 
                     vcData.locked = false;
 
-                    await channel.permissionOverwrites.edit(
-                        message.guild.roles.everyone.id,
-                        {
-                            Connect: true
-                        }
-                    );
+                    try {
+                        await channel.permissionOverwrites.edit(
+                            message.guild.roles.everyone.id,
+                            {
+                                Connect: true
+                            }
+                        );
+                    } catch {}
 
                     return replySuccess(
                         message,
@@ -1325,9 +1411,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // TRANSFER
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand ===
@@ -1366,9 +1452,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // CLAIM
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand === "claim"
@@ -1424,9 +1510,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // FORCE CLAIM
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand ===
@@ -1478,9 +1564,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // RENAME
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand ===
@@ -1504,9 +1590,17 @@ client.on(
                         );
                     }
 
-                    await channel.setName(
-                        newName
-                    );
+                    try {
+                        await channel.setName(
+                            newName
+                        );
+                    } catch {
+                        return replyError(
+                            message,
+                            "Rename Failed",
+                            "I couldn't rename the VC."
+                        );
+                    }
 
                     return replySuccess(
                         message,
@@ -1515,9 +1609,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // LIMIT
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand ===
@@ -1547,9 +1641,17 @@ client.on(
                         );
                     }
 
-                    await channel.setUserLimit(
-                        limit
-                    );
+                    try {
+                        await channel.setUserLimit(
+                            limit
+                        );
+                    } catch {
+                        return replyError(
+                            message,
+                            "Limit Failed",
+                            "I couldn't change the VC limit."
+                        );
+                    }
 
                     return replySuccess(
                         message,
@@ -1558,9 +1660,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // STFU
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand ===
@@ -1631,9 +1733,9 @@ client.on(
                     );
                 }
 
-                // ----------------------------------------------
+                // ------------------------------------------------
                 // UNSTFU
-                // ----------------------------------------------
+                // ------------------------------------------------
 
                 if (
                     subcommand ===
@@ -1712,21 +1814,25 @@ client.on(
             }
 
             // ==================================================
-            // MODERATION
+            // MODERATION PERMISSION
             // ==================================================
 
+            const moderationCommands = [
+                "ban",
+                "unban",
+                "banlist",
+                "kick",
+                "timeout",
+                "untimeout",
+                "foreverban",
+                "purge",
+                "clear"
+            ];
+
             if (
-                [
-                    "ban",
-                    "unban",
-                    "banlist",
-                    "kick",
-                    "timeout",
-                    "untimeout",
-                    "foreverban",
-                    "purge",
-                    "clear"
-                ].includes(command)
+                moderationCommands.includes(
+                    command
+                )
             ) {
                 if (
                     !canModerate(
@@ -1761,7 +1867,9 @@ client.on(
 
                 if (
                     getRankLevel(target) >=
-                    getRankLevel(message.member)
+                    getRankLevel(
+                        message.member
+                    )
                 ) {
                     return replyError(
                         message,
@@ -1785,7 +1893,6 @@ client.on(
                     await target.ban({
                         reason
                     });
-
                 } catch {
                     return replyError(
                         message,
@@ -1864,19 +1971,20 @@ client.on(
                 }
 
                 const list =
-                    bans.map(
-                        ban =>
-                            `• ${ban.user.tag} — \`${ban.user.id}\``
-                    )
-                    .slice(0, 50)
-                    .join("\n");
+                    bans
+                        .map(
+                            ban =>
+                                `• ${ban.user.tag} — \`${ban.user.id}\``
+                        )
+                        .slice(0, 50)
+                        .join("\n");
 
                 return message.reply({
                     embeds: [
                         new EmbedBuilder()
                             .setColor(0x000000)
                             .setAuthor({
-                                name: "bleed"
+                                name: "VC+"
                             })
                             .setDescription(
                                 `✦ **BAN LIST**\n\n${list}`
@@ -1908,7 +2016,9 @@ client.on(
 
                 if (
                     getRankLevel(target) >=
-                    getRankLevel(message.member)
+                    getRankLevel(
+                        message.member
+                    )
                 ) {
                     return replyError(
                         message,
@@ -1932,7 +2042,6 @@ client.on(
                     await target.kick(
                         reason
                     );
-
                 } catch {
                     return replyError(
                         message,
@@ -1975,7 +2084,9 @@ client.on(
 
                 if (
                     getRankLevel(target) >=
-                    getRankLevel(message.member)
+                    getRankLevel(
+                        message.member
+                    )
                 ) {
                     return replyError(
                         message,
@@ -2020,7 +2131,6 @@ client.on(
                         minutes * 60 * 1000,
                         reason
                     );
-
                 } catch {
                     return replyError(
                         message,
@@ -2126,7 +2236,9 @@ client.on(
                 try {
                     await target.ban({
                         reason:
-                            args.slice(1).join(" ") ||
+                            args
+                                .slice(1)
+                                .join(" ") ||
                             "Forever banned by VC+"
                     });
                 } catch {}
@@ -2236,7 +2348,7 @@ client.on(
 
                 if (
                     requestedRank ===
-                    "founder" &&
+                        "founder" &&
                     target.id !==
                         message.guild.ownerId
                 ) {
@@ -2514,7 +2626,11 @@ client.on(
                     return replySuccess(
                         message,
                         "Filter Logging",
-                        `Filter logging is now **${data.filter.log ? "ON" : "OFF"}**.`
+                        `Filter logging is now **${
+                            data.filter.log
+                                ? "ON"
+                                : "OFF"
+                        }**.`
                     );
                 }
 
@@ -2593,7 +2709,7 @@ client.on(
             try {
                 await message.reply({
                     embeds: [
-                        bleedEmbed(
+                        vcEmbed(
                             "Something went wrong while processing that command."
                         )
                     ]
@@ -2604,12 +2720,15 @@ client.on(
 );
 
 // ======================================================
-// JOIN TO CREATE
+// VOICE STATE SYSTEM
 // ======================================================
 
 client.on(
     "voiceStateUpdate",
-    async (oldState, newState) => {
+    async (
+        oldState,
+        newState
+    ) => {
         try {
             const member =
                 newState.member ||
@@ -2625,9 +2744,9 @@ client.on(
                     guild.id
                 );
 
-            // ----------------------------------------------
+            // ==================================================
             // JOIN TO CREATE
-            // ----------------------------------------------
+            // ==================================================
 
             if (
                 newState.channelId &&
@@ -2640,9 +2759,9 @@ client.on(
                 );
             }
 
-            // ----------------------------------------------
-            // STFU ENFORCEMENT
-            // ----------------------------------------------
+            // ==================================================
+            // VC+ STFU ENFORCEMENT
+            // ==================================================
 
             if (
                 newState.channelId
@@ -2671,9 +2790,9 @@ client.on(
                 }
             }
 
-            // ----------------------------------------------
-            // BLOCK BANNED / REJECTED USERS
-            // ----------------------------------------------
+            // ==================================================
+            // BLOCK BANNED / REJECTED
+            // ==================================================
 
             if (
                 newState.channelId
@@ -2684,26 +2803,27 @@ client.on(
                     );
 
                 if (vcData) {
-                    if (
+                    const blocked =
                         vcData.banned.has(
                             member.id
                         ) ||
                         vcData.rejected.has(
                             member.id
-                        )
-                    ) {
+                        );
+
+                    if (blocked) {
                         try {
                             await member.voice.setChannel(
                                 null
                             );
                         } catch {}
 
-                        await sendLog(
-                            guild,
-                            "VC BLOCK",
-                            `${member} attempted to enter ${newState.channel}.`
-                        );
+                        return;
                     }
+
+                    // ==================================================
+                    // LOCKED VC
+                    // ==================================================
 
                     if (
                         vcData.locked &&
@@ -2719,13 +2839,15 @@ client.on(
                                 null
                             );
                         } catch {}
+
+                        return;
                     }
                 }
             }
 
-            // ----------------------------------------------
-            // STFU ON SELF-UNMUTE
-            // ----------------------------------------------
+            // ==================================================
+            // STFU SELF-UNMUTE PROTECTION
+            // ==================================================
 
             if (
                 newState.channelId &&
@@ -2754,9 +2876,9 @@ client.on(
                 }
             }
 
-            // ----------------------------------------------
-            // CLEAN OLD VC
-            // ----------------------------------------------
+            // ==================================================
+            // CLEAN EMPTY VC
+            // ==================================================
 
             if (
                 oldState.channelId &&
@@ -2821,7 +2943,6 @@ client.on(
                     true
                 );
             }
-
         } catch (error) {
             console.error(
                 "Member join error:",
@@ -2832,7 +2953,7 @@ client.on(
 );
 
 // ======================================================
-// CHANNEL SECURITY
+// CHANNEL CREATE SECURITY
 // ======================================================
 
 client.on(
@@ -2841,13 +2962,16 @@ client.on(
         try {
             if (!channel.guild) return;
 
+            const guild =
+                channel.guild;
+
             const data =
                 getGuildData(
-                    channel.guild.id
+                    guild.id
                 );
 
             await sendLog(
-                channel.guild,
+                guild,
                 "CHANNEL CREATED",
                 `Channel **${channel.name}** was created.`
             );
@@ -2859,8 +2983,9 @@ client.on(
             }
 
             const logs =
-                await channel.guild.fetchAuditLogs({
-                    type: AuditLogEvent.ChannelCreate,
+                await guild.fetchAuditLogs({
+                    type:
+                        AuditLogEvent.ChannelCreate,
                     limit: 1
                 });
 
@@ -2875,7 +3000,7 @@ client.on(
             if (!executor) return;
 
             const member =
-                await channel.guild.members.fetch(
+                await guild.members.fetch(
                     executor.id
                 ).catch(() => null);
 
@@ -2887,13 +3012,12 @@ client.on(
                 )
             ) {
                 await sendLog(
-                    channel.guild,
+                    guild,
                     "SECURITY ALERT",
                     `${member} created **${channel.name}** without Founder/God authorization.`,
                     true
                 );
             }
-
         } catch (error) {
             console.error(
                 "Channel create security error:",
@@ -2935,7 +3059,8 @@ client.on(
 
             const logs =
                 await guild.fetchAuditLogs({
-                    type: AuditLogEvent.ChannelDelete,
+                    type:
+                        AuditLogEvent.ChannelDelete,
                     limit: 1
                 });
 
@@ -2968,7 +3093,6 @@ client.on(
                     true
                 );
             }
-
         } catch (error) {
             console.error(
                 "Channel delete security error:",
@@ -2979,7 +3103,7 @@ client.on(
 );
 
 // ======================================================
-// ROLE SECURITY
+// ROLE CREATE SECURITY
 // ======================================================
 
 client.on(
@@ -3008,7 +3132,8 @@ client.on(
 
             const logs =
                 await guild.fetchAuditLogs({
-                    type: AuditLogEvent.RoleCreate,
+                    type:
+                        AuditLogEvent.RoleCreate,
                     limit: 1
                 });
 
@@ -3047,7 +3172,6 @@ client.on(
                     true
                 );
             }
-
         } catch (error) {
             console.error(
                 "Role create security error:",
@@ -3056,6 +3180,10 @@ client.on(
         }
     }
 );
+
+// ======================================================
+// ROLE DELETE SECURITY
+// ======================================================
 
 client.on(
     "roleDelete",
@@ -3083,7 +3211,8 @@ client.on(
 
             const logs =
                 await guild.fetchAuditLogs({
-                    type: AuditLogEvent.RoleDelete,
+                    type:
+                        AuditLogEvent.RoleDelete,
                     limit: 1
                 });
 
@@ -3116,7 +3245,6 @@ client.on(
                     true
                 );
             }
-
         } catch (error) {
             console.error(
                 "Role delete security error:",
@@ -3150,7 +3278,8 @@ client.on(
 
             const logs =
                 await guild.fetchAuditLogs({
-                    type: AuditLogEvent.WebhookCreate,
+                    type:
+                        AuditLogEvent.WebhookCreate,
                     limit: 1
                 }).catch(() => null);
 
@@ -3185,7 +3314,6 @@ client.on(
                     true
                 );
             }
-
         } catch (error) {
             console.error(
                 "Webhook security error:",
@@ -3213,10 +3341,14 @@ client.once(
                     type: ActivityType.Watching
                 }
             ],
+
             status: "online"
         });
 
-        for (const guild of client.guilds.cache.values()) {
+        for (
+            const guild of
+            client.guilds.cache.values()
+        ) {
             try {
                 getGuildData(
                     guild.id
@@ -3236,7 +3368,7 @@ client.once(
 );
 
 // ======================================================
-// BOT JOIN
+// BOT JOINS SERVER
 // ======================================================
 
 client.on(
@@ -3251,14 +3383,18 @@ client.on(
                 guild
             );
 
+            const me =
+                guild.members.me;
+
             const channel =
                 guild.channels.cache
                     .filter(
                         c =>
                             c.type ===
                                 ChannelType.GuildText &&
+                            me &&
                             c.permissionsFor(
-                                guild.members.me
+                                me
                             )?.has(
                                 PermissionFlagsBits.SendMessages
                             )
@@ -3277,7 +3413,7 @@ client.on(
                     new EmbedBuilder()
                         .setColor(0x000000)
                         .setAuthor({
-                            name: "bleed"
+                            name: "VC+"
                         })
                         .setDescription(`
 ✦ **VC+ IS ONLINE**
@@ -3290,7 +3426,8 @@ Welcome to **${guild.name}**.
 **Start**
 \`${PREFIX}help\`
 
-**VC+ includes**
+**VC+ INCLUDES**
+
 • Join To Create
 • VC controls
 • Moderation
@@ -3301,11 +3438,11 @@ Welcome to **${guild.name}**.
 • Forever bans
 
 ━━━━━━━━━━━━━━━━━━━━
+
 **VC+**
                         `)
                 ]
             });
-
         } catch (error) {
             console.error(
                 "Guild join error:",
