@@ -211,14 +211,12 @@ function getRank(member) {
         return "member";
     }
 
-    // Server owner always has Founder
     if (member.guild.ownerId === member.id) {
         return "founder";
     }
 
     const data = getGuildData(member.guild.id);
 
-    // Explicit rank assignment
     if (data.ranks[member.id]) {
         return normalizeRank(data.ranks[member.id]) || "member";
     }
@@ -283,7 +281,7 @@ function isTrustedExecutor(member) {
 }
 
 // ======================================================
-// VC+ COMMAND RESPONSE STYLE
+// VC+ RESPONSE SYSTEM
 // ======================================================
 
 function vcEmbed(message) {
@@ -565,7 +563,7 @@ async function sendLog(
 }
 
 // ======================================================
-// MODERATION DM
+// MODERATION DMS
 // ======================================================
 
 async function sendModerationDM(
@@ -606,7 +604,7 @@ async function sendModerationDM(
             ]
         });
     } catch {
-        // User has DMs disabled.
+        // DMs disabled.
     }
 }
 
@@ -652,6 +650,10 @@ function isVCOwner(
     );
 }
 
+// ======================================================
+// CREATE PERSONAL VC
+// ======================================================
+
 async function createPersonalVC(member) {
     const guild = member.guild;
 
@@ -671,9 +673,7 @@ async function createPersonalVC(member) {
         await guild.channels.create({
             name: `${member.user.username} VC`,
             type: ChannelType.GuildVoice,
-
-            parent:
-                category?.id || null,
+            parent: category?.id || null,
 
             permissionOverwrites: [
                 {
@@ -723,7 +723,7 @@ async function createPersonalVC(member) {
 }
 
 // ======================================================
-// VC CLEANUP
+// CLEANUP
 // ======================================================
 
 async function cleanupVC(channel) {
@@ -803,7 +803,7 @@ function requireVCOwner(message) {
 }
 
 // ======================================================
-// MESSAGE FILTER
+// WORD FILTER
 // ======================================================
 
 async function handleFilter(message) {
@@ -900,7 +900,7 @@ async function handleFilter(message) {
 }
 
 // ======================================================
-// MESSAGE COMMAND HANDLER
+// COMMAND HANDLER
 // ======================================================
 
 client.on(
@@ -1017,10 +1017,11 @@ client.on(
                         );
                 }
 
+                // NO EMOJI
                 const joinChannel =
                     await message.guild.channels.create(
                         {
-                            name: "➕・Join To Create",
+                            name: "Join To Create",
                             type: ChannelType.GuildVoice,
                             parent: category.id
                         }
@@ -2760,7 +2761,7 @@ client.on(
             }
 
             // ==================================================
-            // VC+ STFU ENFORCEMENT
+            // STFU ENFORCEMENT
             // ==================================================
 
             if (
@@ -2791,7 +2792,7 @@ client.on(
             }
 
             // ==================================================
-            // BLOCK BANNED / REJECTED
+            // BANNED / REJECTED
             // ==================================================
 
             if (
