@@ -1,234 +1,430 @@
+// src/app.js
+
 import {
-    ChannelType,
-    PermissionFlagsBits
+    Client,
+    GatewayIntentBits,
+    Partials,
+    Collection
 } from 'discord.js';
 
 import {
-    getJoinToCreateConfig,
-    updateJoinToCreateConfig
-} from '../utils/database.js';
+    db,
+    initializeDatabase,
+    pgDb
+} from './utils/database.js';
 
-import { logger } from '../utils/logger.js';
+import { logger } from './utils/logger.js';
+import { BotConfig } from './config/bot.js';
 
-export async function handleJoinToCreate(oldState, newState, client) {
+// ============================================================
+// CLIENT
+// ============================================================
+
+const client = new Client({
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildMessageReactions
+    ],
+
+    partials: [
+        Partials.Channel,
+        Partials.Message,
+        Partials.User,
+        Partials.GuildMember,
+        Partials.Reaction
+    ]
+});
+
+// ============================================================
+// COMMAND COLLECTION
+// ============================================================
+
+client.commands = new Collection();
+
+// Make database available through client
+client.db = db;
+
+// ============================================================
+// ERROR PROTECTION
+// ============================================================
+
+process.on('unhandledRejection', (error) => {
+    logger.error('Unhandled promise rejection:', error);
+});
+
+process.on('uncaughtException', (error) => {
+    logger.error('Uncaught exception:', error);
+});
+
+process.on('warning', (warning) => {
+    logger.warn('Node warning:', warning);
+});
+
+// Discord client errors
+client.on('error', (error) => {
+    logger.error('Discord client error:', error);
+});
+
+client.on('shardError', (error) => {
+    logger.error('Discord shard error:', error);
+});
+
+// ============================================================
+// READY
+// ============================================================
+
+client.once('ready', async () => {
     try {
-        // User didn't actually change voice channels
-        if (oldState.channelId === newState.channelId) return;
+        logger.info(`Logged in as ${client.user.tag}`);
 
-        const guild = newState.guild;
+        logger.info(
+            `Connected to ${client.guilds.cache.size} server(s)`
+        );
 
-        if (!guild) return;
+        // Database initialization
+        try {
+            await initializeDatabase();
+            logger.info('Database initialized successfully.');
+        } catch (error) {
+            logger.error(
+                'Database initialization failed:',
+                error
+            );
+        }
 
-        const member = newState.member;
+        // Presence
+        try {
+            const status =
+                BotConfig?.presence?.status ||
+                'online';
 
-        if (!member) return;
+            const activity =
+                BotConfig?.presence?.activity ||
+                null;
 
-        const config = await getJoinToCreateConfig(client, guild.id);
+            client.user.setPresence({
+                status,
+                activities: activity
+                    ? [{
+                        name: activity,
+                        type: 0
+                    }]
+                    : []
+            });
+        } catch (error) {
+            logger.warn(
+                'Could not set bot presence:',
+                error
+            );
+        }
 
-        if (!config) return;
+        logger.info('Bot is ready.');
+    } catch (error) {
+        logger.error(
+            'Ready event error:',
+            error
+        );
+    }
+});
 
-        if (config.enabled === false) return;
+// ============================================================
+// GUILD JOIN
+// ============================================================
 
-        const triggerChannels = Array.isArray(config.triggerChannels)
-            ? config.triggerChannels
-            : [];
+client.on('guildCreate', async (guild) => {
+    try {
+        logger.info(
+            `Joined guild: ${guild.name} (${guild.id})`
+        );
+    } catch (error) {
+        logger.error(
+            'Guild create handler error:',
+            error
+        );
+    }
+});
 
-        // User didn't join a trigger channel
-        if (!newState.channelId || !triggerChannels.includes(newState.channelId)) {
-            await cleanupEmptyChannel(oldState, config, client);
+// ============================================================
+// GUILD LEAVE
+// ============================================================
+
+client.on('guildDelete', async (guild) => {
+    try {
+        logger.info(
+            `Left guild: ${guild.name} (${guild.id})`
+        );
+    } catch (error) {
+        logger.error(
+            'Guild delete handler error:',
+            error
+        );
+    }
+});
+
+// ============================================================
+// MESSAGE PROTECTION
+// ============================================================
+
+client.on('messageCreate', async (message) => {
+    try {
+        if (!message || message.author?.bot) {
             return;
         }
 
-        const triggerChannel = newState.channel;
+        // Your command/event handlers can be loaded here.
+        // Example:
+        //
+        // await handleMessage(message, client);
 
-        if (!triggerChannel) return;
+    } catch (error) {
+        logger.error(
+            'messageCreate error:',
+            error
+        );
+    }
+});
 
-        // Prevent duplicate channels
-        const temporaryChannels = config.temporaryChannels || {};
+// ============================================================
+// VOICE / JOIN TO CREATE
+// ============================================================
 
-        if (temporaryChannels[member.id]) {
-            const existing = guild.channels.cache.get(
-                temporaryChannels[member.id]
+client.on(
+    'voiceStateUpdate',
+    async (oldState, newState) => {
+        try {
+            const {
+                handleJoinToCreate
+            } = await import(
+                './events/joinToCreate.js'
             );
 
-            if (existing) {
-                await member.voice.setChannel(existing).catch(() => {});
+            if (
+                typeof handleJoinToCreate === 'function'
+            ) {
+                await handleJoinToCreate(
+                    oldState,
+                    newState,
+                    client
+                );
+            }
+        } catch (error) {
+            logger.error(
+                'voiceStateUpdate error:',
+                error
+            );
+        }
+    }
+);
+
+// ============================================================
+// INTERACTIONS
+// ============================================================
+
+client.on(
+    'interactionCreate',
+    async (interaction) => {
+        try {
+            if (!interaction) {
                 return;
             }
 
-            delete temporaryChannels[member.id];
+            if (interaction.isChatInputCommand()) {
+                const command =
+                    client.commands.get(
+                        interaction.commandName
+                    );
 
-            await updateJoinToCreateConfig(client, guild.id, {
-                temporaryChannels
-            });
-        }
+                if (!command) {
+                    logger.warn(
+                        `Unknown command: ${interaction.commandName}`
+                    );
 
-        const channelOptions =
-            config.channelOptions?.[triggerChannel.id] || {};
+                    if (!interaction.replied) {
+                        await interaction.reply({
+                            content:
+                                '❌ Command not found.',
+                            ephemeral: true
+                        }).catch(() => {});
+                    }
 
-        const nameTemplate =
-            channelOptions.nameTemplate ||
-            config.channelNameTemplate ||
-            '{username}\'s Room';
+                    return;
+                }
 
-        const userLimit =
-            channelOptions.userLimit ??
-            config.userLimit ??
-            0;
+                try {
+                    await command.execute(
+                        interaction,
+                        client
+                    );
+                } catch (error) {
+                    logger.error(
+                        `Command error (${interaction.commandName}):`,
+                        error
+                    );
 
-        const bitrate =
-            channelOptions.bitrate ??
-            config.bitrate ??
-            64000;
+                    if (
+                        interaction.replied ||
+                        interaction.deferred
+                    ) {
+                        await interaction.editReply({
+                            content:
+                                '❌ Something went wrong while running that command.'
+                        }).catch(() => {});
+                    } else {
+                        await interaction.reply({
+                            content:
+                                '❌ Something went wrong while running that command.',
+                            ephemeral: true
+                        }).catch(() => {});
+                    }
+                }
 
-        const categoryId =
-            channelOptions.categoryId ||
-            config.categoryId ||
-            triggerChannel.parentId;
-
-        const channelName = formatChannelName(
-            nameTemplate,
-            member,
-            guild
-        );
-
-        const permissionOverwrites = [
-            {
-                id: guild.roles.everyone.id,
-                deny: [
-                    PermissionFlagsBits.Connect
-                ]
-            },
-            {
-                id: member.id,
-                allow: [
-                    PermissionFlagsBits.ViewChannel,
-                    PermissionFlagsBits.Connect,
-                    PermissionFlagsBits.Speak,
-                    PermissionFlagsBits.Stream
-                ]
+                return;
             }
-        ];
 
-        const tempChannel = await guild.channels.create({
-            name: channelName,
-            type: ChannelType.GuildVoice,
+            // Buttons
+            if (interaction.isButton()) {
+                try {
+                    // Button handlers can go here.
+                } catch (error) {
+                    logger.error(
+                        'Button interaction error:',
+                        error
+                    );
+                }
 
-            parent: categoryId || null,
+                return;
+            }
 
-            userLimit: Math.max(
-                0,
-                Math.min(99, Number(userLimit) || 0)
-            ),
+            // Select menus
+            if (interaction.isStringSelectMenu()) {
+                try {
+                    // Select menu handlers can go here.
+                } catch (error) {
+                    logger.error(
+                        'Select menu error:',
+                        error
+                    );
+                }
 
-            bitrate: Math.max(
-                8000,
-                Math.min(384000, Number(bitrate) || 64000)
-            ),
+                return;
+            }
 
-            permissionOverwrites
-        });
+            // Modals
+            if (interaction.isModalSubmit()) {
+                try {
+                    // Modal handlers can go here.
+                } catch (error) {
+                    logger.error(
+                        'Modal interaction error:',
+                        error
+                    );
+                }
+            }
 
-        // Save temporary channel
-        temporaryChannels[member.id] = tempChannel.id;
-
-        await updateJoinToCreateConfig(client, guild.id, {
-            temporaryChannels
-        });
-
-        // Move member
-        try {
-            await member.voice.setChannel(tempChannel);
         } catch (error) {
             logger.error(
-                `Failed to move ${member.user.tag} to JTC channel:`,
+                'interactionCreate error:',
                 error
             );
+        }
+    }
+);
 
-            await tempChannel.delete().catch(() => {});
+// ============================================================
+// LOGIN
+// ============================================================
 
-            delete temporaryChannels[member.id];
+async function startBot() {
+    try {
+        const token =
+            process.env.DISCORD_TOKEN ||
+            process.env.BOT_TOKEN ||
+            BotConfig?.token;
 
-            await updateJoinToCreateConfig(client, guild.id, {
-                temporaryChannels
-            });
-
-            return;
+        if (!token) {
+            throw new Error(
+                'Discord bot token is missing. Set DISCORD_TOKEN in your environment variables.'
+            );
         }
 
-        logger.info(
-            `Created JTC channel ${tempChannel.name} for ${member.user.tag}`
-        );
+        logger.info('Starting bot...');
+
+        await client.login(token);
 
     } catch (error) {
         logger.error(
-            'Join-to-Create error:',
+            'Failed to start Discord bot:',
             error
         );
+
+        // Give the logger time to write before exiting.
+        setTimeout(() => {
+            process.exit(1);
+        }, 1000);
     }
 }
 
-async function cleanupEmptyChannel(oldState, config, client) {
+// ============================================================
+// SHUTDOWN
+// ============================================================
+
+async function shutdown(signal) {
     try {
-        if (!oldState?.channelId) return;
-
-        const channel = oldState.channel;
-
-        if (!channel) return;
-
-        if (channel.type !== ChannelType.GuildVoice) return;
-
-        const temporaryChannels = config.temporaryChannels || {};
-
-        const entry = Object.entries(temporaryChannels)
-            .find(([, channelId]) => channelId === channel.id);
-
-        if (!entry) return;
-
-        // Still has people inside
-        if (channel.members.size > 0) return;
-
-        const [ownerId] = entry;
-
-        delete temporaryChannels[ownerId];
-
-        await updateJoinToCreateConfig(client, oldState.guild.id, {
-            temporaryChannels
-        });
-
-        await channel.delete(
-            'Join-to-Create channel became empty'
-        ).catch(() => {});
-
         logger.info(
-            `Deleted empty JTC channel ${channel.id}`
+            `${signal} received. Shutting down...`
         );
+
+        try {
+            if (
+                pgDb &&
+                typeof pgDb.close === 'function'
+            ) {
+                await pgDb.close();
+            }
+        } catch (error) {
+            logger.error(
+                'Database shutdown error:',
+                error
+            );
+        }
+
+        try {
+            client.destroy();
+        } catch (error) {
+            logger.error(
+                'Discord shutdown error:',
+                error
+            );
+        }
+
+        process.exit(0);
 
     } catch (error) {
         logger.error(
-            'JTC cleanup error:',
+            'Shutdown error:',
             error
         );
+
+        process.exit(1);
     }
 }
 
-function formatChannelName(template, member, guild) {
-    return template
-        .replaceAll(
-            '{username}',
-            member.user.username
-        )
-        .replaceAll(
-            '{display_name}',
-            member.displayName
-        )
-        .replaceAll(
-            '{user_tag}',
-            member.user.tag
-        )
-        .replaceAll(
-            '{guild_name}',
-            guild.name
-        )
-        .slice(0, 100);
-}
+process.on(
+    'SIGINT',
+    () => shutdown('SIGINT')
+);
+
+process.on(
+    'SIGTERM',
+    () => shutdown('SIGTERM')
+);
+
+// ============================================================
+// START
+// ============================================================
+
+startBot();
