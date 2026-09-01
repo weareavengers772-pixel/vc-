@@ -1,25 +1,18 @@
+// src/app.js
+
 import {
     Client,
     GatewayIntentBits,
     Partials,
-    Collection
+    PermissionFlagsBits
 } from 'discord.js';
-
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-
-import {
-    db,
-    initializeDatabase,
-    pgDb
-} from './utils/database.js';
 
 import { logger } from './utils/logger.js';
 import { BotConfig } from './config/bot.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// ============================================================
+// CLIENT
+// ============================================================
 
 const client = new Client({
     intents: [
@@ -27,267 +20,657 @@ const client = new Client({
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildMessageReactions
+        GatewayIntentBits.GuildVoiceStates
     ],
+
     partials: [
         Partials.Channel,
         Partials.Message,
         Partials.User,
-        Partials.GuildMember,
-        Partials.Reaction
+        Partials.GuildMember
     ]
 });
 
-client.commands = new Collection();
-client.db = db;
+// ============================================================
+// PREFIX
+// ============================================================
 
-/* =========================
-   ERROR HANDLING
-========================= */
+const PREFIX = '-';
 
-process.on('unhandledRejection', error => {
-    logger.error('Unhandled promise rejection:', error);
+// ============================================================
+// RANKS
+// ============================================================
+
+const RANKS = {
+    founder: 'Founder 👑',
+    god: 'God ✦',
+    owner: 'Owner ★',
+    coowner: 'Co-Owner ✧',
+    executive: 'Executive ◆',
+    director: 'Director ◇',
+    admin: 'Admin ⚔',
+    moderator: 'Moderator 🛡',
+    staff: 'Staff ✚',
+    member: 'Member ◟'
+};
+
+// ============================================================
+// ERROR PROTECTION
+// ============================================================
+
+process.on('unhandledRejection', (error) => {
+    console.error('Unhandled rejection:', error);
 });
 
-process.on('uncaughtException', error => {
-    logger.error('Uncaught exception:', error);
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught exception:', error);
 });
 
-client.on('error', error => {
-    logger.error('Discord client error:', error);
+client.on('error', (error) => {
+    console.error('Discord client error:', error);
 });
 
-client.on('shardError', error => {
-    logger.error('Discord shard error:', error);
+client.on('shardError', (error) => {
+    console.error('Discord shard error:', error);
 });
 
-/* =========================
-   LOAD COMMANDS
-========================= */
+// ============================================================
+// READY
+// ============================================================
 
-async function loadCommands() {
-    const commandsPath = path.join(__dirname, 'commands');
+client.once('ready', () => {
+    console.log(`Logged in as ${client.user.tag}`);
+    console.log(`Connected to ${client.guilds.cache.size} server(s)`);
 
-    if (!fs.existsSync(commandsPath)) {
-        logger.warn('Commands folder does not exist:', commandsPath);
-        return;
+    try {
+        const status =
+            BotConfig?.presence?.status || 'online';
+
+        const activity =
+            BotConfig?.presence?.activity || null;
+
+        client.user.setPresence({
+            status,
+            activities: activity
+                ? [
+                    {
+                        name: activity,
+                        type: 0
+                    }
+                ]
+                : []
+        });
+    } catch (error) {
+        console.log('Presence error:', error);
     }
 
-    const files = fs
-        .readdirSync(commandsPath)
-        .filter(file => file.endsWith('.js'));
+    console.log('Bot is ready.');
+});
 
-    for (const file of files) {
-        try {
-            const filePath = path.join(commandsPath, file);
-            const command = await import(pathToFileURL(filePath).href);
+// ============================================================
+// GUILD JOIN
+// ============================================================
 
-            const cmd = command.default || command;
+client.on('guildCreate', (guild) => {
+    console.log(`Joined server: ${guild.name}`);
+});
 
-            if (!cmd?.data?.name || typeof cmd.execute !== 'function') {
-                logger.warn(`Skipping invalid command: ${file}`);
-                continue;
+// ============================================================
+// GUILD LEAVE
+// ============================================================
+
+client.on('guildDelete', (guild) => {
+    console.log(`Left server: ${guild.name}`);
+});
+
+// ============================================================
+// MESSAGE COMMANDS
+// ============================================================
+
+client.on('messageCreate', async (message) => {
+    try {
+        if (!message.guild) return;
+        if (message.author.bot) return;
+
+        const content = message.content.trim();
+
+        if (!content.startsWith(PREFIX)) return;
+
+        const args = content
+            .slice(PREFIX.length)
+            .trim()
+            .split(/\s+/);
+
+        const command = args.shift()?.toLowerCase();
+
+        if (!command) return;
+
+        // ====================================================
+        // HELP
+        // ====================================================
+
+        if (command === 'help') {
+            return message.reply(
+                [
+                    '**TitanBot Commands**',
+                    '',
+                    '**Moderation**',
+                    '`-ban @user [reason]`',
+                    '`-unban <userID>`',
+                    '`-kick @user [reason]`',
+                    '`-timeout @user <minutes> [reason]`',
+                    '`-untimeout @user`',
+                    '`-massban @user @user ...`',
+                    '`-massunban <id> <id> ...`',
+                    '',
+                    '**Ranks**',
+                    '`-rank @user <rank>`',
+                    '',
+                    '**Other**',
+                    '`-help`',
+                    '`-ping`'
+                ].join('\n')
+            );
+        }
+
+        // ====================================================
+        // PING
+        // ====================================================
+
+        if (command === 'ping') {
+            return message.reply(`🏓 Pong! ${client.ws.ping}ms`);
+        }
+
+        // ====================================================
+        // RANK
+        // ONLY SERVER OWNER CAN USE THIS
+        // ====================================================
+
+        if (command === 'rank') {
+            if (message.author.id !== message.guild.ownerId) {
+                return message.reply(
+                    '❌ Only the server owner can give ranks.'
+                );
             }
 
-            client.commands.set(cmd.data.name, cmd);
+            const target =
+                message.mentions.members.first();
 
-            logger.info(`Loaded command: ${cmd.data.name}`);
-        } catch (error) {
-            logger.error(`Failed to load command ${file}:`, error);
-        }
-    }
+            const rankName =
+                args.slice(1).join('').toLowerCase();
 
-    logger.info(`Loaded ${client.commands.size} command(s).`);
-}
-
-/* =========================
-   READY
-========================= */
-
-client.once('ready', async () => {
-    try {
-        logger.info(`Logged in as ${client.user.tag}`);
-        logger.info(
-            `Connected to ${client.guilds.cache.size} server(s)`
-        );
-
-        try {
-            await initializeDatabase();
-            logger.info('Database initialized.');
-        } catch (error) {
-            logger.error('Database initialization failed:', error);
-        }
-
-        try {
-            const status =
-                BotConfig?.presence?.status || 'online';
-
-            const activity =
-                BotConfig?.presence?.activity || null;
-
-            client.user.setPresence({
-                status,
-                activities: activity
-                    ? [
-                        {
-                            name: activity,
-                            type: 0
-                        }
-                    ]
-                    : []
-            });
-        } catch (error) {
-            logger.warn('Presence error:', error);
-        }
-
-        logger.info('Bot is ready.');
-    } catch (error) {
-        logger.error('Ready event error:', error);
-    }
-});
-
-/* =========================
-   GUILD EVENTS
-========================= */
-
-client.on('guildCreate', guild => {
-    logger.info(
-        `Joined guild: ${guild.name} (${guild.id})`
-    );
-});
-
-client.on('guildDelete', guild => {
-    logger.info(
-        `Left guild: ${guild.name} (${guild.id})`
-    );
-});
-
-/* =========================
-   VOICE / JTC
-========================= */
-
-client.on('voiceStateUpdate', async (oldState, newState) => {
-    try {
-        const { handleJoinToCreate } =
-            await import('./events/joinToCreate.js');
-
-        if (typeof handleJoinToCreate === 'function') {
-            await handleJoinToCreate(
-                oldState,
-                newState,
-                client
-            );
-        }
-    } catch (error) {
-        logger.error('Voice state error:', error);
-    }
-});
-
-/* =========================
-   INTERACTIONS
-========================= */
-
-client.on('interactionCreate', async interaction => {
-    try {
-        /* COMMANDS */
-        if (interaction.isChatInputCommand()) {
-            const command = client.commands.get(
-                interaction.commandName
-            );
-
-            if (!command) {
-                logger.warn(
-                    `Command not found: ${interaction.commandName}`
+            if (!target) {
+                return message.reply(
+                    '❌ Mention a user.\nExample: `-rank @user admin`'
                 );
+            }
 
-                if (!interaction.replied && !interaction.deferred) {
-                    await interaction.reply({
-                        content: '❌ Command not found.',
-                        ephemeral: true
-                    }).catch(() => {});
-                }
+            if (!rankName) {
+                return message.reply(
+                    [
+                        '**Available Ranks:**',
+                        '`founder` 👑',
+                        '`god` ✦',
+                        '`owner` ★',
+                        '`coowner` ✧',
+                        '`executive` ◆',
+                        '`director` ◇',
+                        '`admin` ⚔',
+                        '`moderator` 🛡',
+                        '`staff` ✚',
+                        '`member` ◟'
+                    ].join('\n')
+                );
+            }
 
-                return;
+            const roleName = RANKS[rankName];
+
+            if (!roleName) {
+                return message.reply(
+                    '❌ Invalid rank. Use `-rank @user` to see the ranks.'
+                );
             }
 
             try {
-                await command.execute(
-                    interaction,
-                    client
+                // Remove all existing rank roles
+                const rankRoleNames =
+                    Object.values(RANKS);
+
+                const rolesToRemove =
+                    target.roles.cache.filter(role =>
+                        rankRoleNames.includes(role.name)
+                    );
+
+                if (rolesToRemove.size > 0) {
+                    await target.roles.remove(
+                        rolesToRemove
+                    );
+                }
+
+                // Find existing role
+                let role =
+                    message.guild.roles.cache.find(
+                        r => r.name === roleName
+                    );
+
+                // Create role if it doesn't exist
+                if (!role) {
+                    role =
+                        await message.guild.roles.create({
+                            name: roleName,
+                            reason: 'TitanBot rank system'
+                        });
+                }
+
+                await target.roles.add(
+                    role,
+                    'Server owner assigned rank'
+                );
+
+                return message.reply(
+                    `✅ ${target} is now **${roleName}**.`
+                );
+
+            } catch (error) {
+                console.error('Rank error:', error);
+
+                return message.reply(
+                    '❌ I could not give that rank. Make sure my bot role is above the rank roles.'
+                );
+            }
+        }
+
+        // ====================================================
+        // BAN
+        // ====================================================
+
+        if (command === 'ban') {
+            if (
+                !message.member.permissions.has(
+                    PermissionFlagsBits.BanMembers
+                )
+            ) {
+                return message.reply(
+                    '❌ You need **Ban Members** permission.'
+                );
+            }
+
+            const target =
+                message.mentions.members.first();
+
+            if (!target) {
+                return message.reply(
+                    '❌ Mention a user.\nExample: `-ban @user reason`'
+                );
+            }
+
+            if (target.id === message.author.id) {
+                return message.reply(
+                    '❌ You cannot ban yourself.'
+                );
+            }
+
+            if (!target.bannable) {
+                return message.reply(
+                    '❌ I cannot ban this user. Check my role position and permissions.'
+                );
+            }
+
+            const reason =
+                args.slice(1).join(' ') ||
+                'No reason provided';
+
+            try {
+                await target.ban({ reason });
+
+                return message.reply(
+                    `🔨 **${target.user.tag}** has been banned.\n**Reason:** ${reason}`
                 );
             } catch (error) {
-                logger.error(
-                    `Command error: ${interaction.commandName}`,
-                    error
+                console.error(error);
+
+                return message.reply(
+                    '❌ Failed to ban the user.'
+                );
+            }
+        }
+
+        // ====================================================
+        // UNBAN
+        // ====================================================
+
+        if (command === 'unban') {
+            if (
+                !message.member.permissions.has(
+                    PermissionFlagsBits.BanMembers
+                )
+            ) {
+                return message.reply(
+                    '❌ You need **Ban Members** permission.'
+                );
+            }
+
+            const userId = args[0];
+
+            if (!userId) {
+                return message.reply(
+                    '❌ Enter a user ID.\nExample: `-unban 123456789012345678`'
+                );
+            }
+
+            try {
+                await message.guild.members.unban(userId);
+
+                return message.reply(
+                    `✅ User **${userId}** has been unbanned.`
+                );
+            } catch (error) {
+                return message.reply(
+                    '❌ Could not unban that user. Check the ID and make sure they are banned.'
+                );
+            }
+        }
+
+        // ====================================================
+        // KICK
+        // ====================================================
+
+        if (command === 'kick') {
+            if (
+                !message.member.permissions.has(
+                    PermissionFlagsBits.KickMembers
+                )
+            ) {
+                return message.reply(
+                    '❌ You need **Kick Members** permission.'
+                );
+            }
+
+            const target =
+                message.mentions.members.first();
+
+            if (!target) {
+                return message.reply(
+                    '❌ Mention a user.\nExample: `-kick @user reason`'
+                );
+            }
+
+            if (!target.kickable) {
+                return message.reply(
+                    '❌ I cannot kick this user.'
+                );
+            }
+
+            const reason =
+                args.slice(1).join(' ') ||
+                'No reason provided';
+
+            try {
+                await target.kick(reason);
+
+                return message.reply(
+                    `👢 **${target.user.tag}** has been kicked.\n**Reason:** ${reason}`
+                );
+            } catch (error) {
+                console.error(error);
+
+                return message.reply(
+                    '❌ Failed to kick the user.'
+                );
+            }
+        }
+
+        // ====================================================
+        // TIMEOUT
+        // ====================================================
+
+        if (command === 'timeout') {
+            if (
+                !message.member.permissions.has(
+                    PermissionFlagsBits.ModerateMembers
+                )
+            ) {
+                return message.reply(
+                    '❌ You need **Moderate Members** permission.'
+                );
+            }
+
+            const target =
+                message.mentions.members.first();
+
+            if (!target) {
+                return message.reply(
+                    '❌ Mention a user.\nExample: `-timeout @user 10 reason`'
+                );
+            }
+
+            const minutes =
+                Number(args[1]);
+
+            if (
+                !Number.isFinite(minutes) ||
+                minutes <= 0
+            ) {
+                return message.reply(
+                    '❌ Enter a valid number of minutes.'
+                );
+            }
+
+            const duration =
+                Math.min(minutes, 40320) * 60 * 1000;
+
+            const reason =
+                args.slice(2).join(' ') ||
+                'No reason provided';
+
+            try {
+                await target.timeout(
+                    duration,
+                    reason
                 );
 
-                const response = {
-                    content:
-                        '❌ Something went wrong while running this command.',
-                    ephemeral: true
-                };
+                return message.reply(
+                    `⏱️ **${target.user.tag}** has been timed out for **${minutes} minutes**.\n**Reason:** ${reason}`
+                );
+            } catch (error) {
+                console.error(error);
 
-                if (
-                    interaction.replied ||
-                    interaction.deferred
-                ) {
-                    await interaction.editReply(
-                        response
-                    ).catch(() => {});
-                } else {
-                    await interaction.reply(
-                        response
-                    ).catch(() => {});
+                return message.reply(
+                    '❌ Failed to timeout the user.'
+                );
+            }
+        }
+
+        // ====================================================
+        // UNTIMEOUT
+        // ====================================================
+
+        if (command === 'untimeout') {
+            if (
+                !message.member.permissions.has(
+                    PermissionFlagsBits.ModerateMembers
+                )
+            ) {
+                return message.reply(
+                    '❌ You need **Moderate Members** permission.'
+                );
+            }
+
+            const target =
+                message.mentions.members.first();
+
+            if (!target) {
+                return message.reply(
+                    '❌ Mention a user.'
+                );
+            }
+
+            try {
+                await target.timeout(
+                    null,
+                    'Timeout removed'
+                );
+
+                return message.reply(
+                    `✅ Timeout removed from **${target.user.tag}**.`
+                );
+            } catch (error) {
+                console.error(error);
+
+                return message.reply(
+                    '❌ Failed to remove the timeout.'
+                );
+            }
+        }
+
+        // ====================================================
+        // MASS BAN
+        // ====================================================
+
+        if (command === 'massban') {
+            if (
+                !message.member.permissions.has(
+                    PermissionFlagsBits.BanMembers
+                )
+            ) {
+                return message.reply(
+                    '❌ You need **Ban Members** permission.'
+                );
+            }
+
+            const members =
+                message.mentions.members;
+
+            if (members.size === 0) {
+                return message.reply(
+                    '❌ Mention the users you want to ban.'
+                );
+            }
+
+            let success = 0;
+            let failed = 0;
+
+            for (const [, member] of members) {
+                try {
+                    if (
+                        member.id !== message.author.id &&
+                        member.bannable
+                    ) {
+                        await member.ban({
+                            reason:
+                                'Mass ban by moderator'
+                        });
+
+                        success++;
+                    } else {
+                        failed++;
+                    }
+                } catch {
+                    failed++;
                 }
             }
 
-            return;
-        }
-
-        /* BUTTONS */
-        if (interaction.isButton()) {
-            logger.info(
-                `Button pressed: ${interaction.customId}`
+            return message.reply(
+                `🔨 Mass ban complete.\n✅ Banned: **${success}**\n❌ Failed: **${failed}**`
             );
-
-            return;
         }
 
-        /* SELECT MENUS */
-        if (interaction.isStringSelectMenu()) {
-            logger.info(
-                `Select menu used: ${interaction.customId}`
+        // ====================================================
+        // MASS UNBAN
+        // ====================================================
+
+        if (command === 'massunban') {
+            if (
+                !message.member.permissions.has(
+                    PermissionFlagsBits.BanMembers
+                )
+            ) {
+                return message.reply(
+                    '❌ You need **Ban Members** permission.'
+                );
+            }
+
+            if (args.length === 0) {
+                return message.reply(
+                    '❌ Enter user IDs.\nExample: `-massunban 123 456 789`'
+                );
+            }
+
+            let success = 0;
+            let failed = 0;
+
+            for (const userId of args) {
+                try {
+                    await message.guild.members.unban(
+                        userId,
+                        'Mass unban by moderator'
+                    );
+
+                    success++;
+                } catch {
+                    failed++;
+                }
+            }
+
+            return message.reply(
+                `✅ Mass unban complete.\n✅ Unbanned: **${success}**\n❌ Failed: **${failed}**`
             );
-
-            return;
         }
 
-        /* MODALS */
-        if (interaction.isModalSubmit()) {
-            logger.info(
-                `Modal submitted: ${interaction.customId}`
-            );
+        // ====================================================
+        // UNKNOWN COMMAND
+        // ====================================================
 
-            return;
-        }
+        return message.reply(
+            `❌ Unknown command. Use \`${PREFIX}help\``
+        );
 
     } catch (error) {
-        logger.error(
-            'Interaction error:',
+        console.error(
+            'messageCreate error:',
             error
         );
     }
 });
 
-/* =========================
-   LOGIN
-========================= */
+// ============================================================
+// VOICE / JOIN TO CREATE
+// ============================================================
+
+client.on(
+    'voiceStateUpdate',
+    async (oldState, newState) => {
+        try {
+            const module =
+                await import(
+                    './events/joinToCreate.js'
+                );
+
+            if (
+                typeof module.handleJoinToCreate ===
+                'function'
+            ) {
+                await module.handleJoinToCreate(
+                    oldState,
+                    newState,
+                    client
+                );
+            }
+        } catch (error) {
+            console.error(
+                'Join-to-create error:',
+                error
+            );
+        }
+    }
+);
+
+// ============================================================
+// LOGIN
+// ============================================================
 
 async function startBot() {
     try {
-        await loadCommands();
-
         const token =
             process.env.DISCORD_TOKEN ||
             process.env.BOT_TOKEN ||
@@ -295,16 +678,16 @@ async function startBot() {
 
         if (!token) {
             throw new Error(
-                'Missing Discord bot token. Set DISCORD_TOKEN or BOT_TOKEN.'
+                'DISCORD_TOKEN is missing.'
             );
         }
 
-        logger.info('Starting bot...');
+        console.log('Starting bot...');
 
         await client.login(token);
 
     } catch (error) {
-        logger.error(
+        console.error(
             'Failed to start bot:',
             error
         );
@@ -315,45 +698,36 @@ async function startBot() {
     }
 }
 
-/* =========================
-   SHUTDOWN
-========================= */
+// ============================================================
+// SHUTDOWN
+// ============================================================
 
 async function shutdown(signal) {
+    console.log(
+        `${signal} received. Shutting down...`
+    );
+
     try {
-        logger.info(`${signal} received. Shutting down...`);
-
-        if (
-            pgDb &&
-            typeof pgDb.close === 'function'
-        ) {
-            await pgDb.close().catch(error => {
-                logger.error(
-                    'Database shutdown error:',
-                    error
-                );
-            });
-        }
-
         client.destroy();
-
-        process.exit(0);
-
     } catch (error) {
-        logger.error(
-            'Shutdown error:',
-            error
-        );
-
-        process.exit(1);
+        console.error(error);
     }
+
+    process.exit(0);
 }
 
-process.on('SIGINT', () => shutdown('SIGINT'));
-process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on(
+    'SIGINT',
+    () => shutdown('SIGINT')
+);
 
-/* =========================
-   START
-========================= */
+process.on(
+    'SIGTERM',
+    () => shutdown('SIGTERM')
+);
+
+// ============================================================
+// START
+// ============================================================
 
 startBot();
