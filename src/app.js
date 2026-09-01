@@ -156,7 +156,6 @@ function getGuildData(guildId) {
                 triggerId: null
             },
 
-            // ONLY DISCORD ROLE USED BY VC+
             roles: {
                 vouch: null
             },
@@ -299,6 +298,10 @@ function getRankName(member) {
 
 function isFounder(member) {
 
+    if (!member) {
+        return false;
+    }
+
     return (
         getRank(member) >=
         RANKS.founder
@@ -307,9 +310,34 @@ function isFounder(member) {
 
 function isGod(member) {
 
-    return (
+    if (!member) {
+        return false;
+    }
+
+    // Founder is always God-level
+    if (
+        getRank(member) >=
+        RANKS.founder
+    ) {
+        return true;
+    }
+
+    // Actual God rank
+    if (
         getRank(member) >=
         RANKS.god
+    ) {
+        return true;
+    }
+
+    // Godmode granted by Founder
+    const data =
+        getGuildData(
+            member.guild.id
+        );
+
+    return data.godmode.includes(
+        member.id
     );
 }
 
@@ -342,10 +370,9 @@ async function isSecurityTrusted(
         return true;
     }
 
-    // ONLY GOD + FOUNDER
+    // GOD + FOUNDER
     return (
-        getRank(member) >=
-        RANKS.god
+        isGod(member)
     );
 }
 
@@ -357,14 +384,16 @@ async function isTrustedExecutor(
     // VC+ itself
     if (
         client.user &&
-        userId === client.user.id
+        userId ===
+            client.user.id
     ) {
         return true;
     }
 
     // Server owner
     if (
-        userId === guild.ownerId
+        userId ===
+        guild.ownerId
     ) {
         return true;
     }
@@ -402,6 +431,20 @@ function canModerate(
     if (
         actor.id ===
         target.id
+    ) {
+        return false;
+    }
+
+    // Founder can moderate anyone
+    if (
+        isFounder(actor)
+    ) {
+        return true;
+    }
+
+    // Nobody below Founder can moderate Founder
+    if (
+        isFounder(target)
     ) {
         return false;
     }
@@ -540,7 +583,6 @@ async function getVouchRole(
         return role;
     }
 
-    // Look for existing Vouch role
     role =
         guild.roles.cache.find(
             r =>
@@ -548,7 +590,6 @@ async function getVouchRole(
                 "vouch"
         );
 
-    // Create if missing
     if (!role) {
 
         try {
@@ -615,7 +656,6 @@ async function updateVouchRole(
                 userId
             );
 
-        // HAS VOUCH
         if (
             vouches.length > 0
         ) {
@@ -635,7 +675,6 @@ async function updateVouchRole(
             return;
         }
 
-        // NO VOUCH
         if (
             member.roles.cache.has(
                 role.id
@@ -692,12 +731,10 @@ client.on(
                     vouchRoleId
                 );
 
-            // Nothing changed
             if (oldHas === newHas) {
                 return;
             }
 
-            // Database is the source of truth
             await updateVouchRole(
                 newMember.guild,
                 newMember.id
@@ -741,7 +778,6 @@ async function setupGuildVC(
         let category = null;
         let trigger = null;
 
-        // Existing category
         if (
             data.jtc.categoryId
         ) {
@@ -752,7 +788,6 @@ async function setupGuildVC(
                 );
         }
 
-        // Create category
         if (!category) {
 
             vcPlusCreatingChannels.add(
@@ -780,7 +815,6 @@ async function setupGuildVC(
             }
         }
 
-        // Existing trigger
         if (
             data.jtc.triggerId
         ) {
@@ -791,7 +825,6 @@ async function setupGuildVC(
                 );
         }
 
-        // Create trigger
         if (!trigger) {
 
             vcPlusCreatingChannels.add(
@@ -1127,7 +1160,6 @@ client.once(
                 "online"
         });
 
-        // Make sure every guild has Vouch
         for (
             const guild
             of client.guilds.cache.values()
@@ -1143,7 +1175,7 @@ client.once(
         );
 
         console.log(
-            "[VC+] Only Founder + God are trusted."
+            "[VC+] Founder + God security enabled."
         );
     }
 );
@@ -1734,7 +1766,8 @@ client.on(
                     vouch.from !==
                         message.author.id &&
                     !staff &&
-                    !isServerOwner(member)
+                    !isServerOwner(member) &&
+                    !isFounder(member)
                 ) {
 
                     return sendBox(
@@ -1895,7 +1928,8 @@ client.on(
                         voiceChannel.id;
 
                     if (
-                        ownerStillThere
+                        ownerStillThere &&
+                        !isFounder(member)
                     ) {
 
                         return sendBox(
@@ -2023,33 +2057,6 @@ client.on(
                 }
 
                 // ----------------------------------------------
-                // OWNER-ONLY VC COMMANDS
-                // ----------------------------------------------
-
-                if (
-                    ![
-                        "kick",
-                        "ban",
-                        "reject",
-                        "permit",
-                        "lock",
-                        "unlock",
-                        "limit",
-                        "rename",
-                        "transfer",
-                        "stfu",
-                        "unstfu"
-                    ].includes(sub)
-                ) {
-
-                    return sendBox(
-                        message,
-                        "VC+",
-                        "Unknown VC command."
-                    );
-                }
-
-                // ----------------------------------------------
                 // STFU
                 // ----------------------------------------------
 
@@ -2085,15 +2092,41 @@ client.on(
                         );
                     }
 
+                    // God cannot STFU Founder
                     if (
-                        isFounder(target) ||
+                        !isFounder(member) &&
+                        isFounder(target)
+                    ) {
+
+                        return sendBox(
+                            message,
+                            "VC+",
+                            "Only a **Founder** can STFU a Founder."
+                        );
+                    }
+
+                    // God cannot STFU another God
+                    if (
+                        !isFounder(member) &&
                         isGod(target)
                     ) {
 
                         return sendBox(
                             message,
                             "VC+",
-                            "You can't STFU a protected rank."
+                            "You can't STFU a God-level member."
+                        );
+                    }
+
+                    if (
+                        target.voice.channelId !==
+                        voiceChannel.id
+                    ) {
+
+                        return sendBox(
+                            message,
+                            "VC+",
+                            "That member isn't in this VC."
                         );
                     }
 
@@ -2111,7 +2144,7 @@ client.on(
                     return sendBox(
                         message,
                         "VC+",
-                        `Server muted <@${target.id}>.`
+                        `Server muted <@${target.id}>. They cannot unmute themselves until STFU is removed.`
                     );
                 }
 
@@ -2151,6 +2184,18 @@ client.on(
                         );
                     }
 
+                    if (
+                        !isFounder(member) &&
+                        isFounder(target)
+                    ) {
+
+                        return sendBox(
+                            message,
+                            "VC+",
+                            "Only a **Founder** can modify a Founder."
+                        );
+                    }
+
                     vc.stfu.delete(
                         target.id
                     );
@@ -2165,20 +2210,50 @@ client.on(
                     return sendBox(
                         message,
                         "VC+",
-                        `Unmuted <@${target.id}>.`
+                        `<@${target.id}> has been unmuted.`
                     );
                 }
 
                 // ----------------------------------------------
-                // EVERYTHING ELSE = VC OWNER
+                // OWNER-ONLY VC COMMANDS
                 // ----------------------------------------------
 
-                if (!isOwner) {
+                if (
+                    ![
+                        "kick",
+                        "ban",
+                        "reject",
+                        "permit",
+                        "lock",
+                        "unlock",
+                        "limit",
+                        "rename",
+                        "transfer"
+                    ].includes(sub)
+                ) {
 
                     return sendBox(
                         message,
                         "VC+",
-                        "Only the **VC owner** can use this command."
+                        "Unknown VC command."
+                    );
+                }
+
+                // ----------------------------------------------
+                // FOUNDER/GOD VC BYPASS
+                // ----------------------------------------------
+
+                const hasVCAccess =
+                    isFounder(member) ||
+                    isGod(member) ||
+                    isOwner;
+
+                if (!hasVCAccess) {
+
+                    return sendBox(
+                        message,
+                        "VC+",
+                        "Only the **VC owner**, **God**, or **Founder** can use this command."
                     );
                 }
 
@@ -2214,7 +2289,19 @@ client.on(
                         return sendBox(
                             message,
                             "VC+",
-                            "That member isn't in your VC."
+                            "That member isn't in this VC."
+                        );
+                    }
+
+                    if (
+                        isFounder(target) &&
+                        !isFounder(member)
+                    ) {
+
+                        return sendBox(
+                            message,
+                            "VC+",
+                            "You can't kick a Founder."
                         );
                     }
 
@@ -2252,6 +2339,18 @@ client.on(
                             message,
                             "VC+",
                             "Mention a valid member."
+                        );
+                    }
+
+                    if (
+                        isFounder(target) &&
+                        !isFounder(member)
+                    ) {
+
+                        return sendBox(
+                            message,
+                            "VC+",
+                            "You can't ban a Founder from a VC."
                         );
                     }
 
@@ -2299,6 +2398,18 @@ client.on(
                             message,
                             "VC+",
                             "Mention a valid member."
+                        );
+                    }
+
+                    if (
+                        isFounder(target) &&
+                        !isFounder(member)
+                    ) {
+
+                        return sendBox(
+                            message,
+                            "VC+",
+                            "You can't reject a Founder."
                         );
                     }
 
@@ -2543,6 +2654,18 @@ client.on(
                         );
                     }
 
+                    if (
+                        isFounder(target) &&
+                        !isFounder(member)
+                    ) {
+
+                        return sendBox(
+                            message,
+                            "VC+",
+                            "You can't transfer ownership to a protected Founder."
+                        );
+                    }
+
                     vc.ownerId =
                         target.id;
 
@@ -2597,13 +2720,14 @@ client.on(
             ) {
 
                 if (
-                    !isServerOwner(member)
+                    !isServerOwner(member) &&
+                    !isFounder(member)
                 ) {
 
                     return sendBox(
                         message,
                         "Rank",
-                        "Only the **Server Owner** can give or change ranks."
+                        "Only the **Server Owner** or **Founder** can give or change ranks."
                     );
                 }
 
@@ -2641,12 +2765,40 @@ client.on(
                     );
                 }
 
+                // Only Founder can assign Founder
+                if (
+                    rank === "founder" &&
+                    !isFounder(member)
+                ) {
+
+                    return sendBox(
+                        message,
+                        "Rank",
+                        "Only a **Founder** can assign Founder rank."
+                    );
+                }
+
+                // Only Founder can change protected ranks
+                if (
+                    (
+                        isFounder(target) ||
+                        isGod(target)
+                    ) &&
+                    !isFounder(member)
+                ) {
+
+                    return sendBox(
+                        message,
+                        "Rank",
+                        "You can't change a protected rank."
+                    );
+                }
+
                 const data =
                     getGuildData(
                         message.guild.id
                     );
 
-                // DATABASE ONLY
                 data.ranks[
                     target.id
                 ] = rank;
@@ -2670,13 +2822,14 @@ client.on(
             ) {
 
                 if (
+                    !isFounder(member) &&
                     !isServerOwner(member)
                 ) {
 
                     return sendBox(
                         message,
                         "Godmode",
-                        "Only the **Server Owner** can use Godmode."
+                        "Only the **Founder** can use Godmode."
                     );
                 }
 
@@ -2702,6 +2855,18 @@ client.on(
                         message,
                         "Godmode",
                         "Usage: `-godmode on/off @user`"
+                    );
+                }
+
+                if (
+                    target.id ===
+                    member.id
+                ) {
+
+                    return sendBox(
+                        message,
+                        "Godmode",
+                        "You already have Founder privileges."
                     );
                 }
 
@@ -2741,7 +2906,13 @@ client.on(
                 return sendBox(
                     message,
                     "Godmode",
-                    `Godmode **${mode}** for <@${target.id}>.`
+                    [
+                        `<@${target.id}> Godmode is now **${mode.toUpperCase()}**.`,
+                        "",
+                        mode === "on"
+                            ? "They now have God-level VC+ privileges."
+                            : "Their temporary Godmode privileges have been removed."
+                    ].join("\n")
                 );
             }
 
@@ -2803,9 +2974,21 @@ client.on(
                         .join(" ") ||
                     "No reason provided";
 
-                await target.ban({
-                    reason
-                }).catch(() => {});
+                const success =
+                    await target.ban({
+                        reason
+                    })
+                    .then(() => true)
+                    .catch(() => false);
+
+                if (!success) {
+
+                    return sendBox(
+                        message,
+                        "Ban",
+                        "Discord wouldn't let me ban that member. Check my role hierarchy and permissions."
+                    );
+                }
 
                 return sendBox(
                     message,
@@ -2872,9 +3055,21 @@ client.on(
                         .join(" ") ||
                     "No reason provided";
 
-                await target.kick(
-                    reason
-                ).catch(() => {});
+                const success =
+                    await target.kick(
+                        reason
+                    )
+                    .then(() => true)
+                    .catch(() => false);
+
+                if (!success) {
+
+                    return sendBox(
+                        message,
+                        "Kick",
+                        "Discord wouldn't let me kick that member. Check my role hierarchy and permissions."
+                    );
+                }
 
                 return sendBox(
                     message,
@@ -2945,10 +3140,22 @@ client.on(
                     );
                 }
 
-                await target.timeout(
-                    minutes * 60 * 1000,
-                    "VC+ Timeout"
-                ).catch(() => {});
+                const success =
+                    await target.timeout(
+                        minutes * 60 * 1000,
+                        "VC+ Timeout"
+                    )
+                    .then(() => true)
+                    .catch(() => false);
+
+                if (!success) {
+
+                    return sendBox(
+                        message,
+                        "Timeout",
+                        "Discord wouldn't let me timeout that member. Check my role hierarchy and permissions."
+                    );
+                }
 
                 return sendBox(
                     message,
@@ -2995,6 +3202,21 @@ client.on(
                     );
                 }
 
+                if (
+                    !isFounder(member) &&
+                    !canModerate(
+                        member,
+                        target
+                    )
+                ) {
+
+                    return sendBox(
+                        message,
+                        "Timeout",
+                        "You can't modify that member's timeout."
+                    );
+                }
+
                 await target.timeout(
                     null,
                     "VC+ UnTimeout"
@@ -3017,13 +3239,14 @@ client.on(
             ) {
 
                 if (
-                    !isServerOwner(member)
+                    !isServerOwner(member) &&
+                    !isFounder(member)
                 ) {
 
                     return sendBox(
                         message,
                         "Forever Ban",
-                        "Only the **Server Owner** can use this command."
+                        "Only the **Server Owner** or **Founder** can use this command."
                     );
                 }
 
@@ -3039,6 +3262,18 @@ client.on(
                         message,
                         "Forever Ban",
                         "Mention a valid member."
+                    );
+                }
+
+                if (
+                    isFounder(target) &&
+                    !isFounder(member)
+                ) {
+
+                    return sendBox(
+                        message,
+                        "Forever Ban",
+                        "You can't forever-ban a Founder."
                     );
                 }
 
@@ -3060,10 +3295,22 @@ client.on(
 
                 saveDB();
 
-                await target.ban({
-                    reason:
-                        "VC+ Forever Ban"
-                }).catch(() => {});
+                const success =
+                    await target.ban({
+                        reason:
+                            "VC+ Forever Ban"
+                    })
+                    .then(() => true)
+                    .catch(() => false);
+
+                if (!success) {
+
+                    return sendBox(
+                        message,
+                        "Forever Ban",
+                        "I couldn't ban that member. Check my role hierarchy and permissions."
+                    );
+                }
 
                 return sendBox(
                     message,
@@ -3103,6 +3350,63 @@ client.on(
         }
     }
 );
+
+// ======================================================
+// ENFORCE STFU
+// ======================================================
+
+async function enforceSTFU(
+    member,
+    vc
+) {
+
+    if (!member || !vc) {
+        return;
+    }
+
+    // Founder cannot be forced muted
+    if (
+        isFounder(member)
+    ) {
+        return;
+    }
+
+    // God-level users cannot be force-muted
+    // by another God. Founder can override this.
+    if (
+        isGod(member)
+    ) {
+        return;
+    }
+
+    if (
+        !vc.stfu.has(
+            member.id
+        )
+    ) {
+        return;
+    }
+
+    try {
+
+        if (
+            !member.voice.serverMute
+        ) {
+
+            await member.voice.setMute(
+                true,
+                "VC+ STFU Enforcement"
+            );
+        }
+
+    } catch (error) {
+
+        console.error(
+            "[VC+] STFU enforcement error:",
+            error
+        );
+    }
+}
 
 // ======================================================
 // VOICE STATE
@@ -3160,6 +3464,8 @@ client.on(
                     personalVC,
                     member.id
                 );
+
+                return;
             }
 
             // ==================================================
@@ -3184,53 +3490,100 @@ client.on(
                         return;
                     }
 
-                    // BANNED
+                    // Founder bypasses VC restrictions
                     if (
-                        vc.banned.has(
-                            member.id
-                        )
+                        !isFounder(member)
                     ) {
 
-                        await member.voice
-                            .disconnect(
-                                "VC+ Ban"
+                        // BANNED
+                        if (
+                            vc.banned.has(
+                                member.id
                             )
-                            .catch(() => {});
+                        ) {
 
-                        return;
+                            await member.voice
+                                .disconnect(
+                                    "VC+ Ban"
+                                )
+                                .catch(() => {});
+
+                            return;
+                        }
+
+                        // REJECTED
+                        if (
+                            vc.rejected.has(
+                                member.id
+                            )
+                        ) {
+
+                            await member.voice
+                                .disconnect(
+                                    "VC+ Reject"
+                                )
+                                .catch(() => {});
+
+                            return;
+                        }
+
+                        // LOCKED
+                        if (
+                            vc.locked &&
+                            member.id !==
+                                vc.ownerId &&
+                            !vc.permitted.has(
+                                member.id
+                            ) &&
+                            !isGod(member)
+                        ) {
+
+                            await member.voice
+                                .disconnect(
+                                    "VC+ Locked"
+                                )
+                                .catch(() => {});
+
+                            return;
+                        }
                     }
 
-                    // REJECTED
-                    if (
-                        vc.rejected.has(
-                            member.id
-                        )
-                    ) {
+                    // STFU enforcement
+                    await enforceSTFU(
+                        member,
+                        vc
+                    );
+                }
+            }
 
-                        await member.voice
-                            .disconnect(
-                                "VC+ Reject"
-                            )
-                            .catch(() => {});
+            // ==================================================
+            // STFU RE-ENFORCEMENT
+            // ==================================================
 
-                        return;
-                    }
+            if (
+                newState.channelId &&
+                (
+                    oldState.serverMute !==
+                    newState.serverMute
+                )
+            ) {
 
-                    // LOCKED
-                    if (
-                        vc.locked &&
-                        member.id !==
-                            vc.ownerId &&
-                        !vc.permitted.has(
-                            member.id
-                        )
-                    ) {
+                const vc =
+                    temporaryVCs.get(
+                        newState.channelId
+                    );
 
-                        await member.voice
-                            .disconnect(
-                                "VC+ Locked"
-                            )
-                            .catch(() => {});
+                if (vc) {
+
+                    const member =
+                        newState.member;
+
+                    if (member) {
+
+                        await enforceSTFU(
+                            member,
+                            vc
+                        );
                     }
                 }
             }
@@ -3420,7 +3773,6 @@ async function getAuditExecutor(
             return null;
         }
 
-        // Don't use old audit entries
         if (
             Date.now() -
             entry.createdTimestamp >
@@ -3454,7 +3806,6 @@ client.on(
                 return;
             }
 
-            // VC+ created it
             if (
                 vcPlusCreatingChannels.has(
                     channel.guild.id
@@ -3484,7 +3835,6 @@ client.on(
                 return;
             }
 
-            // Bot itself
             if (
                 client.user &&
                 executor.id ===
@@ -3517,12 +3867,10 @@ client.on(
                     executor.id
                 );
 
-            // Delete unauthorized channel
             await channel.delete(
                 "VC+ Security: Unauthorized Channel"
             ).catch(() => {});
 
-            // 3 destructive actions
             if (
                 count >=
                 data.protection.maxActions
@@ -3595,7 +3943,6 @@ client.on(
                     executor.id
                 );
 
-            // 2 deleted channels = punishment
             if (
                 count >= 2
             ) {
@@ -3638,7 +3985,6 @@ client.on(
                 return;
             }
 
-            // Vouch role is allowed
             if (
                 data.roles.vouch ===
                 role.id
@@ -3671,7 +4017,6 @@ client.on(
                     executor.id
                 );
 
-            // Delete unauthorized role
             await role.delete(
                 "VC+ Security: Unauthorized Role"
             ).catch(() => {});
