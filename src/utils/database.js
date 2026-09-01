@@ -1,12 +1,15 @@
 ```js
 // src/utils/database.js
-// Database facade / backward-compatible exports
+// Main database facade
 
 import { pgDb } from './postgresDatabase.js';
 import { logger } from './logger.js';
 import { BotConfig, getDefaultApplicationQuestions } from '../config/bot.js';
 
-// Database wrapper
+// ============================================================
+// DATABASE WRAPPER
+// ============================================================
+
 export {
     db,
     initializeDatabase,
@@ -15,51 +18,72 @@ export {
     deleteFromDb,
 } from './database/wrapper.js';
 
-// Database keys
+// ============================================================
+// DATABASE KEYS
+// ============================================================
+
 export {
     getGuildConfigKey,
     getGuildBirthdaysKey,
     getBirthdayLeftBackupKey,
     getBirthdayTrackingKey,
+
     getTicketKey,
     getTicketCounterKey,
+
     getInviteTrackingKey,
     getMemberInvitesKey,
     getInviteUsesKey,
+
     getFakeAccountKey,
+
     getEconomyKey,
     getEconomyPrefix,
+
     getAFKKey,
+
     getWelcomeConfigKey,
+
     getLevelingKey,
     getUserLevelKey,
     getUserLevelPrefix,
+
     getApplicationRolesKey,
     getApplicationSettingsKey,
     getUserApplicationsKey,
     getApplicationKey,
     getApplicationsPrefix,
+
     getJoinToCreateConfigKey,
     getJoinToCreateChannelsKey,
+
     getWarningsKey,
     getWarningsPrefix,
+
     getUserNotesKey,
     getUserNotesListKey,
+
     getReactionRoleKey,
     getReactionRolesPrefix,
+
     getServerCountersKey,
+
     getGiveawayEntryKey,
     getGiveawayLockKey,
+
     canonicalizeKey,
     getLegacyVariantsForCanonical,
 } from './database/keys.js';
 
-// PostgreSQL
+// ============================================================
+// POSTGRES
+// ============================================================
+
 export { pgDb };
 
-// --------------------------------------------------
-// Helpers
-// --------------------------------------------------
+// ============================================================
+// HELPERS
+// ============================================================
 
 export function unwrapReplitData(data) {
     if (
@@ -96,50 +120,72 @@ export function getColor(path, fallback = '#000000') {
     for (const part of parts) {
         if (!current || current[part] === undefined) {
             logger?.warn?.(
-                `Color path '${path}' not found, using fallback`
+                `Color path '${path}' not found. Using fallback.`
             );
+
             return fallback;
         }
 
         current = current[part];
     }
 
-    return typeof current === 'string' ? current : fallback;
+    return typeof current === 'string'
+        ? current
+        : fallback;
 }
 
-// --------------------------------------------------
-// Birthdays
-// --------------------------------------------------
+// ============================================================
+// BIRTHDAYS
+// ============================================================
 
 export async function getGuildBirthdays(client, guildId) {
     try {
         if (!client?.db?.get) {
-            logger.error('Database client unavailable for birthdays.');
+            logger.error(
+                'Database client is not available for getGuildBirthdays.'
+            );
+
             return {};
         }
 
         const key = getGuildBirthdaysKey(guildId);
         const data = await client.db.get(key, {});
 
-        return unwrapReplitData(data) || {};
+        const result = unwrapReplitData(data);
+
+        return result && typeof result === 'object'
+            ? result
+            : {};
     } catch (error) {
         logger.error(
             `Error getting birthdays for guild ${guildId}:`,
             error
         );
+
         return {};
     }
 }
 
-export async function setBirthday(client, guildId, userId, month, day) {
+export async function setBirthday(
+    client,
+    guildId,
+    userId,
+    month,
+    day
+) {
     try {
         if (!client?.db?.set) {
-            logger.error('Database client unavailable for setBirthday.');
+            logger.error(
+                'Database client is not available for setBirthday.'
+            );
+
             return false;
         }
 
         const key = getGuildBirthdaysKey(guildId);
-        const birthdays = await getGuildBirthdays(client, guildId);
+
+        const birthdays =
+            await getGuildBirthdays(client, guildId);
 
         birthdays[userId] = {
             month: Number(month),
@@ -147,29 +193,44 @@ export async function setBirthday(client, guildId, userId, month, day) {
         };
 
         await client.db.set(key, birthdays);
+
         return true;
     } catch (error) {
         logger.error(
             `Error setting birthday for ${userId}:`,
             error
         );
+
         return false;
     }
 }
 
-export async function deleteBirthday(client, guildId, userId) {
+export async function deleteBirthday(
+    client,
+    guildId,
+    userId
+) {
     try {
         if (!client?.db?.set) {
-            logger.error('Database client unavailable for deleteBirthday.');
+            logger.error(
+                'Database client is not available for deleteBirthday.'
+            );
+
             return false;
         }
 
         const key = getGuildBirthdaysKey(guildId);
-        const birthdays = await getGuildBirthdays(client, guildId);
+
+        const birthdays =
+            await getGuildBirthdays(client, guildId);
 
         if (birthdays[userId]) {
             delete birthdays[userId];
-            await client.db.set(key, birthdays);
+
+            await client.db.set(
+                key,
+                birthdays
+            );
         }
 
         return true;
@@ -178,6 +239,7 @@ export async function deleteBirthday(client, guildId, userId) {
             `Error deleting birthday for ${userId}:`,
             error
         );
+
         return false;
     }
 }
@@ -200,19 +262,28 @@ export function getMonthName(monthNum) {
 
     const month = Number(monthNum);
 
-    return month >= 1 && month <= 12
-        ? months[month - 1]
-        : 'Invalid Month';
+    if (month < 1 || month > 12) {
+        return 'Invalid Month';
+    }
+
+    return months[month - 1];
 }
 
-// --------------------------------------------------
-// Verification audit
-// --------------------------------------------------
+// ============================================================
+// VERIFICATION AUDIT
+// ============================================================
 
 export async function insertVerificationAudit(record) {
     try {
-        const { db, getFromDb, setInDb } =
-            await import('./database/wrapper.js');
+        if (!record || typeof record !== 'object') {
+            return false;
+        }
+
+        const {
+            db,
+            getFromDb,
+            setInDb,
+        } = await import('./database/wrapper.js');
 
         if (!db.initialized) {
             await db.initialize();
@@ -225,10 +296,22 @@ export async function insertVerificationAudit(record) {
             return await pgDb.insertVerificationAudit(record);
         }
 
-        const key = `verification:audit:${record.guildId}`;
+        const guildId = record.guildId;
 
-        const existing = await getFromDb(key, []);
-        const entries = Array.isArray(existing) ? existing : [];
+        if (!guildId) {
+            return false;
+        }
+
+        const key =
+            `verification:audit:${guildId}`;
+
+        const existing =
+            await getFromDb(key, []);
+
+        const entries =
+            Array.isArray(existing)
+                ? existing
+                : [];
 
         entries.push({
             ...record,
@@ -238,10 +321,14 @@ export async function insertVerificationAudit(record) {
         });
 
         const maxEntries =
-            BotConfig?.verification?.maxInMemoryAuditEntries ?? 1000;
+            BotConfig?.verification
+                ?.maxInMemoryAuditEntries ?? 1000;
 
         if (entries.length > maxEntries) {
-            entries.splice(0, entries.length - maxEntries);
+            entries.splice(
+                0,
+                entries.length - maxEntries
+            );
         }
 
         await setInDb(key, entries);
@@ -252,41 +339,76 @@ export async function insertVerificationAudit(record) {
             'Error storing verification audit:',
             error
         );
+
         return false;
     }
 }
 
-// --------------------------------------------------
-// Safe application defaults
-// --------------------------------------------------
+// ============================================================
+// APPLICATION DEFAULTS
+// ============================================================
 
 export function getDefaultApplicationSettings() {
     return {
         enabled: false,
+
         applicationChannelId: null,
+
         logChannelId: null,
+
         questions:
             typeof getDefaultApplicationQuestions === 'function'
                 ? getDefaultApplicationQuestions()
                 : [],
+
         roles: {
             admin: null,
             reviewer: null,
             accepted: null,
             denied: null,
         },
+
         requiredRoles: [],
+
         deniedRoles: [],
+
         minAccountAge: 0,
+
         maxApplications: 1,
+
         cooldown:
-            BotConfig?.applications?.applicationCooldown ?? 7,
+            BotConfig?.applications
+                ?.applicationCooldown ?? 7,
+
         allowMultipleApplications: false,
+
         requireVerification: false,
+
         customWelcomeMessage: '',
+
         pendingApplicationRetentionDays: 30,
+
         reviewedApplicationRetentionDays:
-            BotConfig?.applications?.deleteApprovedAfter ?? 14,
+            BotConfig?.applications
+                ?.deleteApprovedAfter ?? 14,
     };
 }
+
+// ============================================================
+// SAFETY
+// ============================================================
+
+process.on('unhandledRejection', (error) => {
+    logger.error(
+        'Unhandled database promise rejection:',
+        error
+    );
+});
+
+process.on('uncaughtException', (error) => {
+    logger.error(
+        'Uncaught database exception:',
+        error
+    );
+});
 ```
