@@ -1,252 +1,329 @@
 /**
  * Canonical database key registry.
- * All storage keys should be built through these helpers.
+ *
+ * All storage keys should be created through these helpers.
+ * Keep this file dependency-free so it can never cause a circular import.
  */
 
-export const getGuildConfigKey = (guildId) => `guild:${guildId}:config`;
-export const getGuildBirthdaysKey = (guildId) => `guild:${guildId}:birthdays`;
-export const getBirthdayLeftBackupKey = (guildId) => `guild:${guildId}:birthdays:left`;
-export const getBirthdayTrackingKey = (guildId) => `guild:${guildId}:birthdays:tracking`;
+export const getGuildConfigKey = (guildId) =>
+    `guild:${guildId}:config`;
 
-export function getTicketKey(guildId, channelId) {
-    return `guild:${guildId}:ticket:${channelId}`;
-}
+export const getGuildBirthdaysKey = (guildId) =>
+    `guild:${guildId}:birthdays`;
 
-export function getTicketCounterKey(guildId) {
-    return `guild:${guildId}:ticket:counter`;
-}
+export const getBirthdayLeftBackupKey = (guildId) =>
+    `guild:${guildId}:birthdays:left`;
 
-export function getInviteTrackingKey(guildId) {
-    return `guild:${guildId}:invites`;
-}
+export const getBirthdayTrackingKey = (guildId) =>
+    `guild:${guildId}:birthdays:tracking`;
 
-export function getMemberInvitesKey(guildId, userId) {
-    return `guild:${guildId}:invites:${userId}`;
-}
+export const getTicketKey = (guildId, channelId) =>
+    `guild:${guildId}:ticket:${channelId}`;
 
-export function getInviteUsesKey(guildId, inviteCode) {
-    return `guild:${guildId}:invite_uses:${inviteCode}`;
-}
+export const getTicketCounterKey = (guildId) =>
+    `guild:${guildId}:ticket:counter`;
 
-export function getFakeAccountKey(guildId, userId) {
-    return `guild:${guildId}:fake_account:${userId}`;
-}
+export const getInviteTrackingKey = (guildId) =>
+    `guild:${guildId}:invites`;
 
-export function getEconomyKey(guildId, userId) {
-    return `guild:${guildId}:economy:${userId}`;
-}
+export const getMemberInvitesKey = (guildId, userId) =>
+    `guild:${guildId}:invites:${userId}`;
 
-export function getEconomyPrefix(guildId) {
-    return `guild:${guildId}:economy:`;
-}
+export const getInviteUsesKey = (guildId, inviteCode) =>
+    `guild:${guildId}:invite_uses:${inviteCode}`;
 
-export function getAFKKey(guildId, userId) {
-    return `guild:${guildId}:afk:${userId}`;
-}
+export const getFakeAccountKey = (guildId, userId) =>
+    `guild:${guildId}:fake_account:${userId}`;
 
-export function getWelcomeConfigKey(guildId) {
-    return `guild:${guildId}:welcome`;
-}
+export const getEconomyKey = (guildId, userId) =>
+    `guild:${guildId}:economy:${userId}`;
 
-export function getLevelingKey(guildId) {
-    return `guild:${guildId}:leveling:config`;
-}
+export const getEconomyPrefix = (guildId) =>
+    `guild:${guildId}:economy:`;
 
-export function getUserLevelKey(guildId, userId) {
-    return `guild:${guildId}:leveling:users:${userId}`;
-}
+export const getAFKKey = (guildId, userId) =>
+    `guild:${guildId}:afk:${userId}`;
 
-export function getUserLevelPrefix(guildId) {
-    return `guild:${guildId}:leveling:users:`;
-}
+export const getWelcomeConfigKey = (guildId) =>
+    `guild:${guildId}:welcome`;
 
-export function getApplicationRolesKey(guildId) {
-    return `guild:${guildId}:applications:roles`;
-}
+export const getLevelingKey = (guildId) =>
+    `guild:${guildId}:leveling:config`;
 
-export function getApplicationSettingsKey(guildId) {
-    return `guild:${guildId}:applications:settings`;
-}
+export const getUserLevelKey = (guildId, userId) =>
+    `guild:${guildId}:leveling:users:${userId}`;
 
-export function getUserApplicationsKey(guildId, userId) {
-    return `guild:${guildId}:applications:users:${userId}`;
-}
+export const getUserLevelPrefix = (guildId) =>
+    `guild:${guildId}:leveling:users:`;
 
-export function getApplicationKey(guildId, applicationId) {
-    return `guild:${guildId}:applications:${applicationId}`;
-}
+export const getApplicationRolesKey = (guildId) =>
+    `guild:${guildId}:applications:roles`;
 
-export function getApplicationsPrefix(guildId) {
-    return `guild:${guildId}:applications:`;
-}
+export const getApplicationSettingsKey = (guildId) =>
+    `guild:${guildId}:applications:settings`;
 
-export function getJoinToCreateConfigKey(guildId) {
-    return `guild:${guildId}:jointocreate`;
-}
+export const getUserApplicationsKey = (guildId, userId) =>
+    `guild:${guildId}:applications:users:${userId}`;
 
-export function getJoinToCreateChannelsKey(guildId) {
-    return `guild:${guildId}:jointocreate:channels`;
-}
+export const getApplicationKey = (guildId, applicationId) =>
+    `guild:${guildId}:applications:${applicationId}`;
 
-export function getWarningsKey(guildId, userId) {
-    return `guild:${guildId}:warnings:${userId}`;
-}
+export const getApplicationsPrefix = (guildId) =>
+    `guild:${guildId}:applications:`;
 
-export function getWarningsPrefix(guildId) {
-    return `guild:${guildId}:warnings:`;
-}
+export const getApplicationRoleSettingsKey = (guildId, roleId) =>
+    `guild:${guildId}:applications:role:${roleId}:settings`;
 
-export function getUserNotesKey(guildId, userId) {
-    return `guild:${guildId}:usernotes:${userId}`;
-}
+export const getJoinToCreateConfigKey = (guildId) =>
+    `guild:${guildId}:jointocreate`;
 
-export function getUserNotesListKey(guildId) {
-    return `guild:${guildId}:usernotes:list`;
-}
+export const getJoinToCreateChannelsKey = (guildId) =>
+    `guild:${guildId}:jointocreate:channels`;
 
-export function getReactionRoleKey(guildId, messageId) {
-    return `guild:${guildId}:reaction_roles:${messageId}`;
-}
+export const getWarningsKey = (guildId, userId) =>
+    `guild:${guildId}:warnings:${userId}`;
 
-export function getReactionRolesPrefix(guildId) {
-    return `guild:${guildId}:reaction_roles:`;
-}
+export const getWarningsPrefix = (guildId) =>
+    `guild:${guildId}:warnings:`;
 
-export function getServerCountersKey(guildId) {
-    return `guild:${guildId}:counters`;
-}
+export const getUserNotesKey = (guildId, userId) =>
+    `guild:${guildId}:usernotes:${userId}`;
 
-export function getGiveawayEntryKey(userId, giveawayId) {
-    return `giveaway:${userId}:${giveawayId}`;
-}
+export const getUserNotesListKey = (guildId) =>
+    `guild:${guildId}:usernotes:list`;
 
-export function getGiveawayLockKey(messageId) {
-    return `giveaway:lock:${messageId}`;
+export const getReactionRoleKey = (guildId, messageId) =>
+    `guild:${guildId}:reaction_roles:${messageId}`;
+
+export const getReactionRolesPrefix = (guildId) =>
+    `guild:${guildId}:reaction_roles:`;
+
+export const getServerCountersKey = (guildId) =>
+    `guild:${guildId}:counters`;
+
+export const getGiveawayEntryKey = (userId, giveawayId) =>
+    `giveaway:${userId}:${giveawayId}`;
+
+export const getGiveawayLockKey = (messageId) =>
+    `giveaway:lock:${messageId}`;
+
+/**
+ * Validate IDs before creating keys.
+ * This prevents accidental "undefined" database keys.
+ */
+function validId(value) {
+    return (
+        value !== undefined &&
+        value !== null &&
+        String(value).trim().length > 0
+    );
 }
 
 /**
- * Legacy key patterns mapped to canonical builders.
- * Used by migration script and read-time fallback.
+ * Canonicalize legacy keys.
  */
 export const LEGACY_KEY_RESOLVERS = [
     {
         pattern: /^economy:([^:]+):([^:]+)$/,
-        toCanonical: ([, guildId, userId]) => getEconomyKey(guildId, userId),
+        toCanonical: ([, guildId, userId]) =>
+            getEconomyKey(guildId, userId),
     },
+
     {
         pattern: /^birthdays:([^:]+)$/,
-        toCanonical: ([, guildId]) => getGuildBirthdaysKey(guildId),
+        toCanonical: ([, guildId]) =>
+            getGuildBirthdaysKey(guildId),
     },
+
     {
         pattern: /^([^:]+):leveling:users:([^:]+)$/,
-        toCanonical: ([, guildId, userId]) => getUserLevelKey(guildId, userId),
+        toCanonical: ([, guildId, userId]) =>
+            getUserLevelKey(guildId, userId),
         skipIf: (guildId) => guildId === 'guild',
     },
+
     {
         pattern: /^moderation:warnings:([^:]+):([^:]+)$/,
-        toCanonical: ([, guildId, userId]) => getWarningsKey(guildId, userId),
+        toCanonical: ([, guildId, userId]) =>
+            getWarningsKey(guildId, userId),
     },
+
     {
         pattern: /^moderation_user_notes_([^_]+)_([^_]+)$/,
-        toCanonical: ([, guildId, userId]) => getUserNotesKey(guildId, userId),
+        toCanonical: ([, guildId, userId]) =>
+            getUserNotesKey(guildId, userId),
     },
+
     {
         pattern: /^moderation_user_notes_list_([^_]+)$/,
-        toCanonical: ([, guildId]) => getUserNotesListKey(guildId),
+        toCanonical: ([, guildId]) =>
+            getUserNotesListKey(guildId),
     },
+
     {
         pattern: /^reaction_roles:([^:]+):([^:]+)$/,
-        toCanonical: ([, guildId, messageId]) => getReactionRoleKey(guildId, messageId),
+        toCanonical: ([, guildId, messageId]) =>
+            getReactionRoleKey(guildId, messageId),
     },
+
     {
         pattern: /^counters:([^:]+)$/,
-        toCanonical: ([, guildId]) => getServerCountersKey(guildId),
+        toCanonical: ([, guildId]) =>
+            getServerCountersKey(guildId),
     },
+
     {
         pattern: /^bday-role-tracking-([^:]+)$/,
-        toCanonical: ([, guildId]) => getBirthdayTrackingKey(guildId),
+        toCanonical: ([, guildId]) =>
+            getBirthdayTrackingKey(guildId),
     },
 ];
 
 /**
- * Returns the canonical key for a legacy or already-canonical key.
+ * Convert legacy storage keys to canonical keys.
  */
 export function canonicalizeKey(key) {
     if (typeof key !== 'string' || !key) {
         return key;
     }
 
-    for (const { pattern, toCanonical, skipIf } of LEGACY_KEY_RESOLVERS) {
-        const match = key.match(pattern);
-        if (!match) continue;
-        if (skipIf?.(match[1])) continue;
-        return toCanonical(match);
+    for (const resolver of LEGACY_KEY_RESOLVERS) {
+        const match = key.match(resolver.pattern);
+
+        if (!match) {
+            continue;
+        }
+
+        if (resolver.skipIf?.(match[1])) {
+            continue;
+        }
+
+        try {
+            const result = resolver.toCanonical(match);
+
+            if (typeof result === 'string' && result.length > 0) {
+                return result;
+            }
+        } catch {
+            return key;
+        }
     }
 
     return key;
 }
 
 /**
- * Returns legacy key variants that may still hold data for a canonical key.
+ * Return legacy keys for a canonical key.
  */
 export function getLegacyVariantsForCanonical(canonicalKey) {
-    const variants = [];
-
-    for (const { pattern, toCanonical } of LEGACY_KEY_RESOLVERS) {
-        const sample = canonicalKey;
-        const match = sample.match(/^guild:([^:]+):economy:([^:]+)$/);
-        if (match && toCanonical(['', match[1], match[2]]) === canonicalKey) {
-            variants.push(`economy:${match[1]}:${match[2]}`);
-            continue;
-        }
-
-        const birthdaysMatch = sample.match(/^guild:([^:]+):birthdays$/);
-        if (birthdaysMatch && toCanonical(['', birthdaysMatch[1]]) === canonicalKey) {
-            variants.push(`birthdays:${birthdaysMatch[1]}`);
-            continue;
-        }
-
-        const levelMatch = sample.match(/^guild:([^:]+):leveling:users:([^:]+)$/);
-        if (levelMatch && toCanonical(['', levelMatch[1], levelMatch[2]]) === canonicalKey) {
-            variants.push(`${levelMatch[1]}:leveling:users:${levelMatch[2]}`);
-            continue;
-        }
-
-        const warningsMatch = sample.match(/^guild:([^:]+):warnings:([^:]+)$/);
-        if (warningsMatch && toCanonical(['', warningsMatch[1], warningsMatch[2]]) === canonicalKey) {
-            variants.push(`moderation:warnings:${warningsMatch[1]}:${warningsMatch[2]}`);
-            continue;
-        }
-
-        const notesMatch = sample.match(/^guild:([^:]+):usernotes:([^:]+)$/);
-        if (notesMatch && toCanonical(['', notesMatch[1], notesMatch[2]]) === canonicalKey) {
-            variants.push(`moderation_user_notes_${notesMatch[1]}_${notesMatch[2]}`);
-            continue;
-        }
-
-        const notesListMatch = sample.match(/^guild:([^:]+):usernotes:list$/);
-        if (notesListMatch && toCanonical(['', notesListMatch[1]]) === canonicalKey) {
-            variants.push(`moderation_user_notes_list_${notesListMatch[1]}`);
-            continue;
-        }
-
-        const reactionMatch = sample.match(/^guild:([^:]+):reaction_roles:([^:]+)$/);
-        if (reactionMatch && toCanonical(['', reactionMatch[1], reactionMatch[2]]) === canonicalKey) {
-            variants.push(`reaction_roles:${reactionMatch[1]}:${reactionMatch[2]}`);
-            continue;
-        }
-
-        const countersMatch = sample.match(/^guild:([^:]+):counters$/);
-        if (countersMatch && toCanonical(['', countersMatch[1]]) === canonicalKey) {
-            variants.push(`counters:${countersMatch[1]}`);
-            continue;
-        }
-
-        const trackingMatch = sample.match(/^guild:([^:]+):birthdays:tracking$/);
-        if (trackingMatch && toCanonical(['', trackingMatch[1]]) === canonicalKey) {
-            variants.push(`bday-role-tracking-${trackingMatch[1]}`);
-        }
+    if (typeof canonicalKey !== 'string' || !canonicalKey) {
+        return [];
     }
 
-    return variants;
+    const variants = [];
+
+    let match;
+
+    match = canonicalKey.match(
+        /^guild:([^:]+):economy:([^:]+)$/
+    );
+
+    if (match) {
+        variants.push(`economy:${match[1]}:${match[2]}`);
+    }
+
+    match = canonicalKey.match(
+        /^guild:([^:]+):birthdays$/
+    );
+
+    if (match) {
+        variants.push(`birthdays:${match[1]}`);
+    }
+
+    match = canonicalKey.match(
+        /^guild:([^:]+):leveling:users:([^:]+)$/
+    );
+
+    if (match) {
+        variants.push(
+            `${match[1]}:leveling:users:${match[2]}`
+        );
+    }
+
+    match = canonicalKey.match(
+        /^guild:([^:]+):warnings:([^:]+)$/
+    );
+
+    if (match) {
+        variants.push(
+            `moderation:warnings:${match[1]}:${match[2]}`
+        );
+    }
+
+    match = canonicalKey.match(
+        /^guild:([^:]+):usernotes:([^:]+)$/
+    );
+
+    if (match) {
+        variants.push(
+            `moderation_user_notes_${match[1]}_${match[2]}`
+        );
+    }
+
+    match = canonicalKey.match(
+        /^guild:([^:]+):usernotes:list$/
+    );
+
+    if (match) {
+        variants.push(
+            `moderation_user_notes_list_${match[1]}`
+        );
+    }
+
+    match = canonicalKey.match(
+        /^guild:([^:]+):reaction_roles:([^:]+)$/
+    );
+
+    if (match) {
+        variants.push(
+            `reaction_roles:${match[1]}:${match[2]}`
+        );
+    }
+
+    match = canonicalKey.match(
+        /^guild:([^:]+):counters$/
+    );
+
+    if (match) {
+        variants.push(`counters:${match[1]}`);
+    }
+
+    match = canonicalKey.match(
+        /^guild:([^:]+):birthdays:tracking$/
+    );
+
+    if (match) {
+        variants.push(
+            `bday-role-tracking-${match[1]}`
+        );
+    }
+
+    return [...new Set(variants)];
+}
+
+/**
+ * Safely build a key.
+ */
+export function safeKey(builder, ...args) {
+    if (typeof builder !== 'function') {
+        throw new TypeError('Database key builder must be a function');
+    }
+
+    if (args.some((value) => !validId(value))) {
+        throw new Error(
+            `Invalid database key arguments: ${args.join(', ')}`
+        );
+    }
+
+    return builder(...args);
 }
