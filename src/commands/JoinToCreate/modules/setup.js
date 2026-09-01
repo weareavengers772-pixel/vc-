@@ -1,78 +1,89 @@
-import { ChannelType, MessageFlags, PermissionFlagsBits } from 'discord.js';
-import { successEmbed, errorEmbed } from '../../../utils/embeds.js';
-import { logger } from '../../../utils/logger.js';
-import { TitanBotError, ErrorTypes } from '../../../utils/errorHandler.js';
-import { addJoinToCreateTrigger, getJoinToCreateConfig } from '../../../utils/database.js';
+```js
+import {
+  ChannelType,
+  PermissionFlagsBits,
+} from "discord.js";
 
-import { InteractionHelper } from '../../../utils/interactionHelper.js';
 export default {
-    async execute(interaction, config, client) {
-        const category = interaction.options.getChannel('category');
-        const nameTemplate = interaction.options.getString('channel_name') || "{username}'s Room";
-        const userLimit = interaction.options.getInteger('user_limit') || 0;
-        const bitrate = interaction.options.getInteger('bitrate') || 64;
-        const guildId = interaction.guild.id;
+  name: "vc",
+  aliases: ["voice", "jtc"],
+  description: "Voice channel setup commands",
+  category: "JoinToCreate",
 
-        try {
-            const triggerChannel = await interaction.guild.channels.create({
-                name: 'Join to Create',
-                type: ChannelType.GuildVoice,
-                parent: category?.id,
-                userLimit: userLimit,
-                bitrate: bitrate * 1000,
-                permissionOverwrites: [
-                    {
-                        id: interaction.guild.id,
-                        allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.Connect],
-                    },
-                ],
-            });
+  async execute(message, args, client) {
+    if (!message.guild) return;
 
-            await addJoinToCreateTrigger(client, guildId, triggerChannel.id, {
-                nameTemplate: nameTemplate,
-                userLimit: userLimit,
-                bitrate: bitrate * 1000,
-                categoryId: category?.id
-            });
+    // -vc setup
+    if (args[0]?.toLowerCase() === "setup") {
+      if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+        return message.reply("❌ You need **Manage Channels** to use this.");
+      }
 
-            const embed = successEmbed(
-                '✅ Join to Create Setup Complete',
-                `Created trigger channel: ${triggerChannel}\n\n` +
-                `**Settings:**\n` +
-                `• Temporary Channel Name Template: \`${nameTemplate}\`\n` +
-                `• User Limit: ${userLimit === 0 ? 'No limit' : userLimit + ' users'}\n` +
-                `• Bitrate: ${bitrate} kbps\n` +
-                `${category ?`• Category: ${category.name}`: '• Category: None (root level)'}\n\n` +
-                `When users join this channel, a temporary voice channel will be created for them.`
-            );
+      try {
+        // Check if one already exists
+        const existing = message.guild.channels.cache.find(
+          (channel) =>
+            channel.type === ChannelType.GuildVoice &&
+            channel.name === "Join to Create"
+        );
 
-            try {
-                if (interaction.deferred) {
-                    await InteractionHelper.safeEditReply(interaction, { embeds: [embed] });
-                } else {
-                    await InteractionHelper.safeReply(interaction, { embeds: [embed], flags: MessageFlags.Ephemeral });
-                }
-            } catch (responseError) {
-                logger.error('Error responding to interaction:', responseError);
-                
-                try {
-                    if (!interaction.replied) {
-                        await InteractionHelper.safeReply(interaction, { embeds: [embed], flags: MessageFlags.Ephemeral });
-                    }
-                } catch (e) {
-                    logger.error('All response attempts failed:', e);
-                }
-            }
-        } catch (error) {
-            if (error instanceof TitanBotError) {
-                throw error;
-            }
-            logger.error('Error in JoinToCreate setup:', error);
-            throw new TitanBotError(
-                `Setup failed: ${error.message}`,
-                ErrorTypes.DISCORD_API,
-                'Failed to set up Join to Create system.'
-            );
+        if (existing) {
+          return message.reply(
+            `❌ Join to Create is already set up: ${existing}`
+          );
         }
+
+        // Create category
+        let category = message.guild.channels.cache.find(
+          (channel) =>
+            channel.type === ChannelType.GuildCategory &&
+            channel.name === "VOICE CHANNELS"
+        );
+
+        if (!category) {
+          category = await message.guild.channels.create({
+            name: "VOICE CHANNELS",
+            type: ChannelType.GuildCategory,
+          });
+        }
+
+        // Create Join to Create channel
+        const trigger = await message.guild.channels.create({
+          name: "Join to Create",
+          type: ChannelType.GuildVoice,
+          parent: category.id,
+          permissionOverwrites: [
+            {
+              id: message.guild.roles.everyone.id,
+              allow: [
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.Connect,
+              ],
+            },
+          ],
+        });
+
+        return message.reply(
+          `✅ **Join to Create setup complete!**\n\n` +
+          `🔊 Join channel: ${trigger}\n` +
+          `📁 Category: **${category.name}**\n\n` +
+          `When someone joins **Join to Create**, your bot can create a temporary voice channel for them.`
+        );
+      } catch (error) {
+        console.error("VC setup error:", error);
+
+        return message.reply(
+          "❌ I couldn't set up Join to Create. Make sure I have **Manage Channels** permission."
+        );
+      }
     }
+
+    // -vc
+    return message.reply(
+      "🔊 **Voice Commands**\n\n" +
+      "`-vc setup` — Set up Join to Create\n" +
+      "`-vc help` — Show voice commands"
+    );
+  },
 };
+```
