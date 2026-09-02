@@ -108,6 +108,10 @@ function isGodOrHigher(member) {
     return getRankLevel(member) >= RANKS.god;
 }
 
+function canUseStfu(member) {
+    return Boolean(member?.guild?.ownerId === member?.id || isGodOrHigher(member));
+}
+
 function canManageServer(member) {
     return Boolean(
         member?.guild?.ownerId === member?.id ||
@@ -143,6 +147,7 @@ function getGuildConfig(guildId) {
     c.voice.permitted ??= {};
     c.voice.locked ??= {};
     c.voice.limits ??= {};
+    c.voice.stfu ??= {};
     c.temporaryChannels ??= [];
     return c;
 }
@@ -163,15 +168,15 @@ function deny(message) {
 }
 
 function usage(message, text) {
-    return reply(message, `\`\`\`VC+\nUsage: ${text}\n\`\`\``);
+    return reply(message, `\\`\\`\\`VC+\nUsage: ${text}\n\\`\\`\\``);
 }
 
 const HELP_PAGES = [
     { name: "General", description: "-help\nOpen the VC+ command panel.\n\n-ping\nCheck bot latency." },
     { name: "Ranks", description: "-rank @user\nView a rank.\n\n-rank @user <rank>\nSet a rank.\n\n-ranklist\nView the rank hierarchy.\n\n-removerank @user\nServer owner only. Return a user to Member." },
     { name: "Vouches", description: "-vouch set role @Role\nSet the automatic vouch role.\n\n-vouch role\nView the configured vouch role.\n\n-vouch give @user reason\nAdd a vouch and assign the role.\n\n-vouch remove @user\nRemove the latest vouch.\n\n-vouch clear @user\nClear all vouches and remove the role.\n\n-vouch clear everyone\nClear every vouch and remove the role from members.\n\n-vouch list\nView vouch counts.\n\n-vouches @user\nView vouch history." },
-    { name: "Voice", description: "-vc setup\nServer owner only. Create Join-to-Create.\n\n-vc kick @user\nDisconnect a member.\n\n-vc ban @user\nBlock a member from the VC.\n\n-vc permit @user\nAllow a member again.\n\n-vc lock\nLock the VC.\n\n-vc unlock\nUnlock the VC.\n\n-vc limit 0-99\nSet the user limit.\n\n-vc name <name>\nRename the VC.\n\n-vc transfer @user\nTransfer ownership.\n\n-vc claim\nClaim an abandoned VC.\n\n-vc forceclaim\nFounder/God only. Force claim.\n\n-vc stfu @user\nFounder/God only. Server mute.\n\n-vc unstfu @user\nFounder/God only. Remove server mute." },
-    { name: "Interface", description: "-interface\nCreate the VC+ control panel.\n\nThe panel provides Lock, Unlock, Claim, Kick, VC Ban, Permit, Limit, Rename, Transfer, Force Claim, STFU and UnSTFU controls." },
+    { name: "Voice", description: "-vc setup\nServer owner only. Create Join-to-Create.\n\n-vc kick @user\nDisconnect a member.\n\n-vc ban @user\nBlock a member from the VC.\n\n-vc permit @user\nAllow a member again.\n\n-vc lock\nLock the VC.\n\n-vc unlock\nUnlock the VC.\n\n-vc limit 0-99\nSet the user limit.\n\n-vc name <name>\nRename the VC.\n\n-vc transfer @user\nTransfer ownership.\n\n-vc claim\nClaim an abandoned VC.\n\n-vc forceclaim\nFounder/God only. Force claim.\n\n-vc stfu @user\nFounder/God/server owner only. Permanently enforce server mute until unstfu.\n\n-vc unstfu @user\nFounder/God/server owner only. Remove enforced server mute." },
+    { name: "Interface", description: "-interface\nCreate the VC+ control panel.\n\nThe panel provides black-style Discord secondary controls for Lock, Unlock, Claim, Refresh, Kick, VC Ban, Permit, Transfer, Limit, Rename and Force Claim." },
     { name: "Moderation", description: "-ban @user [reason]\nServer owner only.\n\n-kick @user [reason]\nKick a member.\n\n-timeout @user 10m [reason]\nTimeout a member.\n\n-untimeout @user\nRemove a timeout.\n\n-unban USER_ID\nUnban a user.\n\n-unbanall\nFounder only. Unban everyone.\n\n-purge 1-100\nDelete messages.\n\n-clear 1-100\nAlias for purge." }
 ];
 
@@ -179,7 +184,7 @@ function helpPayload(page) {
     const safePage = Math.max(0, Math.min(page, HELP_PAGES.length - 1));
     const p = HELP_PAGES[safePage];
     return {
-        embeds: [new EmbedBuilder().setTitle(`VC+ | ${p.name}`).setDescription(`\`\`\`\n${p.description}\n\`\`\``).setFooter({ text: `Page ${safePage + 1}/${HELP_PAGES.length}` })],
+        embeds: [new EmbedBuilder().setTitle(`VC+ | ${p.name}`).setDescription(`\\`\\`\\`\n${p.description}\n\\`\\`\\``).setFooter({ text: `Page ${safePage + 1}/${HELP_PAGES.length}` })],
         components: [new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId("help_prev").setLabel("<").setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId(`help_page_${safePage}`).setLabel(`${safePage + 1}`).setStyle(ButtonStyle.Secondary).setDisabled(true),
@@ -200,7 +205,6 @@ async function handleHelp(message, args) {
 async function handleRank(message, args) {
     const target = message.mentions.members.first();
     if (!target) return usage(message, "-rank @user [rank]");
-
     if (!args[1]) return reply(message, panel("Rank", `User: ${target.user.tag}\nRank: **${RANK_DISPLAY[getRankName(target)]}**`));
     if (!canManageServer(message.member)) return deny(message);
 
@@ -441,27 +445,26 @@ function canControlVC(member, channel) {
 
 async function createVCPanel(channel, owner) {
     try {
+        const black = ButtonStyle.Secondary;
         await channel.send({
-            embeds: [new EmbedBuilder().setTitle("VC+ | Voice Control").setDescription(`Owner: ${owner}\n\nUse the buttons below or the -vc commands.`).setFooter({ text: "VC+ Voice Control" })],
+            embeds: [new EmbedBuilder().setTitle("VC+ | Voice Control").setDescription(`Owner: ${owner}\n\nUse the controls below or the -vc commands.`).setFooter({ text: "VC+ Voice Control" })],
             components: [
                 new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId("vcui_lock").setLabel("Lock").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_unlock").setLabel("Unlock").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_claim").setLabel("Claim").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_refresh").setLabel("Refresh").setStyle(ButtonStyle.Secondary)
+                    new ButtonBuilder().setCustomId("vcui_lock").setLabel("Lock").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_unlock").setLabel("Unlock").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_claim").setLabel("Claim").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_refresh").setLabel("Refresh").setStyle(black)
                 ),
                 new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId("vcui_kick").setLabel("Kick").setStyle(ButtonStyle.Danger),
-                    new ButtonBuilder().setCustomId("vcui_ban").setLabel("VC Ban").setStyle(ButtonStyle.Danger),
-                    new ButtonBuilder().setCustomId("vcui_permit").setLabel("Permit").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_transfer").setLabel("Transfer").setStyle(ButtonStyle.Secondary)
+                    new ButtonBuilder().setCustomId("vcui_kick").setLabel("Kick").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_ban").setLabel("VC Ban").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_permit").setLabel("Permit").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_transfer").setLabel("Transfer").setStyle(black)
                 ),
                 new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId("vcui_limit").setLabel("Limit").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_rename").setLabel("Rename").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_forceclaim").setLabel("Force Claim").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_stfu").setLabel("STFU").setStyle(ButtonStyle.Danger),
-                    new ButtonBuilder().setCustomId("vcui_unstfu").setLabel("UnSTFU").setStyle(ButtonStyle.Secondary)
+                    new ButtonBuilder().setCustomId("vcui_limit").setLabel("Limit").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_rename").setLabel("Rename").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_forceclaim").setLabel("Force Claim").setStyle(black)
                 )
             ]
         });
@@ -544,7 +547,7 @@ async function handleVC(message, args) {
 
         if (sub === "name" || sub === "rename") {
             const name = args.slice(1).join(" ").slice(0, 100);
-            if (!name) return usage(message, `-vc ${sub} name`);
+            if (!name) return usage(message, `-vc ${sub} <name>`);
             await channel.setName(name);
             return reply(message, panel("Voice", `VC renamed to **${name}**.`));
         }
@@ -575,13 +578,24 @@ async function handleVC(message, args) {
         }
 
         if (sub === "stfu" || sub === "unstfu") {
-            if (!isGodOrHigher(message.member)) return deny(message);
+            if (!canUseStfu(message.member)) return deny(message);
             const target = message.mentions.members.first();
             if (!target) return usage(message, `-vc ${sub} @user`);
             if (isFounder(target)) return reply(message, panel("Voice", "Founder members cannot be server muted or unmuted through VC+."));
             if (target.voice.channelId !== channel.id) return reply(message, "```VC+\nThat member is not in your VC.\n```");
-            await target.voice.setMute(sub === "stfu", `VC+ ${sub}`);
-            return reply(message, panel("Voice", `${target.user.tag} ${sub === "stfu" ? "was server muted" : "is no longer server muted"}.`));
+
+            c.voice.stfu[channel.id] ??= [];
+            if (sub === "stfu") {
+                if (!c.voice.stfu[channel.id].includes(target.id)) c.voice.stfu[channel.id].push(target.id);
+                await target.voice.setMute(true, "VC+ STFU enforcement");
+                saveJSON(CONFIG_FILE, configs);
+                return reply(message, panel("Voice", `${target.user.tag} is now STFU protected. They will be server muted again automatically if they become unmuted.`));
+            }
+
+            c.voice.stfu[channel.id] = c.voice.stfu[channel.id].filter(id => id !== target.id);
+            await target.voice.setMute(false, "VC+ STFU removed");
+            saveJSON(CONFIG_FILE, configs);
+            return reply(message, panel("Voice", `${target.user.tag} is no longer STFU protected.`));
         }
 
         return usage(message, "-vc setup\n-vc kick @user\n-vc ban @user\n-vc permit @user\n-vc lock\n-vc unlock\n-vc limit 0-99\n-vc name <name>\n-vc transfer @user\n-vc claim\n-vc forceclaim\n-vc stfu @user\n-vc unstfu @user");
@@ -602,27 +616,26 @@ async function handleInterface(message) {
             c.interfaceChannel = channel.id;
         }
 
+        const black = ButtonStyle.Secondary;
         const sent = await channel.send({
             embeds: [new EmbedBuilder().setTitle("VC+ | Voice Interface").setDescription("Join your temporary VC and use the controls below. Advanced controls are also available through -vc commands.").setFooter({ text: "VC+ Voice Interface" })],
             components: [
                 new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId("vcui_lock").setLabel("Lock").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_unlock").setLabel("Unlock").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_claim").setLabel("Claim").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_refresh").setLabel("Refresh").setStyle(ButtonStyle.Secondary)
+                    new ButtonBuilder().setCustomId("vcui_lock").setLabel("Lock").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_unlock").setLabel("Unlock").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_claim").setLabel("Claim").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_refresh").setLabel("Refresh").setStyle(black)
                 ),
                 new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId("vcui_kick").setLabel("Kick").setStyle(ButtonStyle.Danger),
-                    new ButtonBuilder().setCustomId("vcui_ban").setLabel("VC Ban").setStyle(ButtonStyle.Danger),
-                    new ButtonBuilder().setCustomId("vcui_permit").setLabel("Permit").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_transfer").setLabel("Transfer").setStyle(ButtonStyle.Secondary)
+                    new ButtonBuilder().setCustomId("vcui_kick").setLabel("Kick").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_ban").setLabel("VC Ban").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_permit").setLabel("Permit").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_transfer").setLabel("Transfer").setStyle(black)
                 ),
                 new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId("vcui_limit").setLabel("Limit").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_rename").setLabel("Rename").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_forceclaim").setLabel("Force Claim").setStyle(ButtonStyle.Secondary),
-                    new ButtonBuilder().setCustomId("vcui_stfu").setLabel("STFU").setStyle(ButtonStyle.Danger),
-                    new ButtonBuilder().setCustomId("vcui_unstfu").setLabel("UnSTFU").setStyle(ButtonStyle.Secondary)
+                    new ButtonBuilder().setCustomId("vcui_limit").setLabel("Limit").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_rename").setLabel("Rename").setStyle(black),
+                    new ButtonBuilder().setCustomId("vcui_forceclaim").setLabel("Force Claim").setStyle(black)
                 )
             ]
         });
@@ -650,9 +663,7 @@ async function showUserModal(interaction, action) {
         kick: "User to kick",
         ban: "User to VC ban",
         permit: "User to permit",
-        transfer: "Transfer ownership to",
-        stfu: "User to STFU",
-        unstfu: "User to UnSTFU"
+        transfer: "Transfer ownership to"
     };
 
     const modal = new ModalBuilder().setCustomId(`vcui_modal_${action}`).setTitle(`VC+ | ${labels[action] || "User"}`);
@@ -681,7 +692,7 @@ async function handleInterfaceButton(interaction) {
     if (!canControlVC(interaction.member, channel)) return interaction.reply({ ephemeral: true, content: "```VC+\nYou do not control this VC.\n```" });
 
     const action = interaction.customId.replace("vcui_", "");
-    if (["kick", "ban", "permit", "transfer", "stfu", "unstfu"].includes(action)) return showUserModal(interaction, action);
+    if (["kick", "ban", "permit", "transfer"].includes(action)) return showUserModal(interaction, action);
     if (["limit", "rename"].includes(action)) return showValueModal(interaction, action);
 
     try {
@@ -691,7 +702,7 @@ async function handleInterfaceButton(interaction) {
             await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { Connect: action === "lock" ? false : null });
             c.voice.locked[channel.id] = action === "lock";
             saveJSON(CONFIG_FILE, configs);
-            return interaction.reply({ ephemeral: true, content: `\`\`\`VC+\nVC ${action === "lock" ? "locked" : "unlocked"}.\n\`\`\`` });
+            return interaction.reply({ ephemeral: true, content: `\\`\\`\\`VC+\nVC ${action === "lock" ? "locked" : "unlocked"}.\n\\`\\`\\`` });
         }
 
         if (action === "claim") {
@@ -734,7 +745,7 @@ async function handleInterfaceModal(interaction) {
                 await channel.setUserLimit(limit, "VC+ interface limit");
                 c.voice.limits[channel.id] = limit;
                 saveJSON(CONFIG_FILE, configs);
-                return interaction.reply({ ephemeral: true, content: `\`\`\`VC+\nUser limit set to ${limit}.\n\`\`\`` });
+                return interaction.reply({ ephemeral: true, content: `\\`\\`\\`VC+\nUser limit set to ${limit}.\n\\`\\`\\`` });
             }
             const name = value.slice(0, 100);
             if (!name) return interaction.reply({ ephemeral: true, content: "```VC+\nEnter a channel name.\n```" });
@@ -744,7 +755,7 @@ async function handleInterfaceModal(interaction) {
 
         const target = getModalMember(interaction);
         if (!target) return interaction.reply({ ephemeral: true, content: "```VC+\nMember not found. Use a valid server member ID or @mention.\n```" });
-        if (isFounder(target) && ["kick", "ban", "stfu", "unstfu"].includes(action)) return interaction.reply({ ephemeral: true, content: "```VC+\nFounder members are protected from this control.\n```" });
+        if (isFounder(target) && ["kick", "ban"].includes(action)) return interaction.reply({ ephemeral: true, content: "```VC+\nFounder members are protected from this control.\n```" });
 
         if (action === "kick") {
             if (target.voice.channelId === channel.id) await target.voice.disconnect("VC+ interface kick").catch(() => {});
@@ -773,14 +784,6 @@ async function handleInterfaceModal(interaction) {
             c.voice.owners[channel.id] = target.id;
             saveJSON(CONFIG_FILE, configs);
             return interaction.reply({ ephemeral: true, content: "```VC+\nVC ownership transferred.\n```" });
-        }
-
-        if (action === "stfu" || action === "unstfu") {
-            if (!isGodOrHigher(interaction.member)) return interaction.reply({ ephemeral: true, content: "```VC+\nFounder or God access is required.\n```" });
-            if (isFounder(target)) return interaction.reply({ ephemeral: true, content: "```VC+\nFounder members cannot be server muted or unmuted through VC+.\n```" });
-            if (target.voice.channelId !== channel.id) return interaction.reply({ ephemeral: true, content: "```VC+\nThat member is not in your VC.\n```" });
-            await target.voice.setMute(action === "stfu", `VC+ ${action}`);
-            return interaction.reply({ ephemeral: true, content: `\`\`\`VC+\nMember ${action === "stfu" ? "server muted" : "server unmuted"}.\n\`\`\`` });
         }
 
         return interaction.reply({ ephemeral: true, content: "```VC+\nUnknown interface action.\n```" });
@@ -819,7 +822,7 @@ client.on("messageCreate", async message => {
             case "clear":
                 return handleModeration(message, command, args);
             default:
-                return reply(message, `\`\`\`VC+\nUnknown command: -${command}\nUse -help to view commands.\n\`\`\``);
+                return reply(message, `\\`\\`\\`VC+\nUnknown command: -${command}\nUse -help to view commands.\n\\`\\`\\``);
         }
     } catch (error) {
         console.error("[VC+ COMMAND ERROR]", error);
@@ -864,6 +867,7 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
 
             c.temporaryChannels.push(channel.id);
             c.voice.owners[channel.id] = newState.member.id;
+            c.voice.stfu[channel.id] = [];
             saveJSON(CONFIG_FILE, configs);
             await newState.member.voice.setChannel(channel);
             await createVCPanel(channel, newState.member);
@@ -878,11 +882,20 @@ client.on("voiceStateUpdate", async (oldState, newState) => {
             delete c.voice.permitted[oldId];
             delete c.voice.locked[oldId];
             delete c.voice.limits[oldId];
+            delete c.voice.stfu[oldId];
             saveJSON(CONFIG_FILE, configs);
         }
 
         if (newState.channel && c.voice.banned[newState.channel.id]?.includes(newState.member.id)) {
             await newState.member.voice.disconnect("VC+ VC ban enforcement").catch(() => {});
+            return;
+        }
+
+        if (newState.channel && isTempVC(c, newState.channel.id)) {
+            const stfuList = c.voice.stfu[newState.channel.id] || [];
+            if (stfuList.includes(newState.member.id) && !newState.serverMute) {
+                await newState.member.voice.setMute(true, "VC+ STFU enforcement").catch(() => {});
+            }
         }
     } catch (error) {
         console.error("[VC+ VOICE ERROR]", error);
@@ -906,8 +919,13 @@ async function startBot() {
         console.error("Missing DISCORD_TOKEN or TOKEN in .env");
         process.exit(1);
     }
-    try { await client.login(token); }
-    catch (error) { console.error("[VC+ LOGIN ERROR]", error); process.exit(1); }
+
+    try {
+        await client.login(token);
+    } catch (error) {
+        console.error("[VC+ LOGIN ERROR]", error);
+        process.exit(1);
+    }
 }
 
 startBot();
