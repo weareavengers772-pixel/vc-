@@ -1,0 +1,294 @@
+name: VC+ Update
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/vcplus-update.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  update-vcplus:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply VC+ vouch and rank updates
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('src/app.js')
+          text = path.read_text(encoding='utf-8')
+
+          # Add -removerank handler immediately before handleRankList.
+          marker = 'async function handleRankList(message) {'
+          removerank = r'''async function handleRemoveRank(message) {
+
+              if (message.guild.ownerId !== message.author.id) {
+                  return deny(message);
+              }
+
+              const target = message.mentions.members.first();
+
+              if (!target) {
+                  return usage(message, "-removerank @user");
+              }
+
+              if (target.id === message.guild.ownerId) {
+                  return safeReply(
+                      message,
+                      panel("Remove Rank", "The server owner is always Founder.")
+                  );
+              }
+
+              if (!ranks[message.guild.id]) {
+                  ranks[message.guild.id] = {};
+              }
+
+              delete ranks[message.guild.id][target.id];
+              saveJSON(RANK_FILE, ranks);
+
+              return safeReply(
+                  message,
+                  panel(
+                      "Remove Rank",
+                      `${target} has been removed from their VC+ rank and returned to **Member**.`
+                  )
+              );
+          }
+
+
+          '''
+
+          if 'async function handleRemoveRank(message)' not in text:
+              if marker not in text:
+                  raise SystemExit('Could not find rank insertion point')
+              text = text.replace(marker, removerank + marker, 1)
+
+          # Add removerank to the Ranks help page.
+          old_rank_help = '''-ranklist
+View rank hierarchy.`'''
+          new_rank_help = '''-ranklist
+View rank hierarchy.
+
+-removerank @user
+Server owner only. Remove a user's VC+ rank and return them to Member.`'''
+          if new_rank_help not in text:
+              if old_rank_help not in text:
+                  raise SystemExit('Could not find rank help insertion point')
+              text = text.replace(old_rank_help, new_rank_help, 1)
+
+          # Replace the existing clear branch with one that also removes the configured role.
+          old_clear = r'''    if (sub === "clear") {
+
+        if (
+            !canManageVouches(
+                message.member
+            )
+        ) {
+
+            return deny(message);
+
+        }
+
+        if (
+            args[1]?.toLowerCase() ===
+            "everyone"
+        ) {
+
+            guildConfig.vouches =
+                {};
+
+            saveJSON(
+                CONFIG_FILE,
+                configs
+            );
+
+            return safeReply(
+
+                message,
+
+                "```VC+\nAll vouches cleared.\n```"
+
+            );
+
+        }
+
+        const target =
+            message.mentions.members.first();
+
+        if (!target) {
+
+            return usage(
+                message,
+                "-vouch clear @user"
+            );
+
+        }
+
+        delete guildConfig.vouches[
+            target.id
+        ];
+
+        saveJSON(
+            CONFIG_FILE,
+            configs
+        );
+
+        return safeReply(
+
+            message,
+
+            `\\`\\`\\`VC+\\nVouches cleared for ${target.user.tag}.\\n\\`\\`\\``
+
+        );
+
+    }'''
+
+          # The source has literal escaped backticks represented differently in Python;
+          # locate the branch by its boundaries instead of relying on the final response string.
+          start = text.find('    if (sub === "clear") {', text.find('async function handleVouch'))
+          end = text.find('\n\n\n    // ========================================================\n    // LIST', start)
+          if start == -1 or end == -1:
+              raise SystemExit('Could not find vouch clear branch')
+
+          clear_block = r'''    if (sub === "clear") {
+
+        if (!canManageVouches(message.member)) {
+            return deny(message);
+        }
+
+        if (args[1]?.toLowerCase() === "everyone") {
+            let removedRoleCount = 0;
+            let roleRemovalFailures = 0;
+
+            guildConfig.vouches = {};
+
+            if (guildConfig.vouchRole) {
+                const role = message.guild.roles.cache.get(guildConfig.vouchRole);
+
+                if (role) {
+                    try {
+                        const members = await message.guild.members.fetch();
+
+                        for (const member of members.values()) {
+                            if (!member.roles.cache.has(role.id)) continue;
+
+                            try {
+                                await member.roles.remove(
+                                    role,
+                                    "VC+ vouches cleared for everyone"
+                                );
+                                removedRoleCount++;
+                            } catch (error) {
+                                roleRemovalFailures++;
+                                console.error("[VOUCH CLEAR ROLE ERROR]", error);
+                            }
+                        }
+                    } catch (error) {
+                        roleRemovalFailures++;
+                        console.error("[VOUCH CLEAR FETCH ERROR]", error);
+                    }
+                }
+            }
+
+            saveJSON(CONFIG_FILE, configs);
+
+            return safeReply(
+                message,
+                panel(
+                    "Vouch Clear",
+                    `Cleared all vouches.\\nVouch role removed from **${removedRoleCount}** member(s).${roleRemovalFailures ? `\\nRole removal failed for **${roleRemovalFailures}** member(s).` : ""}`
+                )
+            );
+        }
+
+        const target = message.mentions.members.first();
+
+        if (!target) {
+            return usage(message, "-vouch clear @user\n-vouch clear everyone");
+        }
+
+        delete guildConfig.vouches[target.id];
+
+        let roleStatus = "No vouch role configured.";
+
+        if (guildConfig.vouchRole) {
+            const role = message.guild.roles.cache.get(guildConfig.vouchRole);
+
+            if (!role) {
+                guildConfig.vouchRole = null;
+                roleStatus = "The configured vouch role no longer exists.";
+            } else if (target.roles.cache.has(role.id)) {
+                try {
+                    await target.roles.remove(role, "VC+ vouches cleared");
+                    roleStatus = `Vouch role removed: ${role.name}`;
+                } catch (error) {
+                    console.error("[VOUCH CLEAR ROLE ERROR]", error);
+                    roleStatus = "Vouches cleared, but I could not remove the vouch role.";
+                }
+            } else {
+                roleStatus = "Vouch role was not assigned to this member.";
+            }
+        }
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            panel(
+                "Vouch Clear",
+                `Cleared all vouches for ${target}.\\n${roleStatus}`
+            )
+        );
+    }'''
+
+          # Convert the raw escaped newline markers in the replacement to normal JS escapes.
+          clear_block = clear_block.replace('\\\\n', '\\n')
+          text = text[:start] + clear_block + text[end:]
+
+          # Add the command router case immediately before ranklist.
+          router_marker = '''                case "ranklist":
+
+                    await handleRankList(
+                        message
+                    );
+
+                    break;'''
+          router_add = '''                case "removerank":
+
+                    await handleRemoveRank(
+                        message
+                    );
+
+                    break;
+
+
+''' + router_marker
+          if 'case "removerank":' not in text:
+              if router_marker not in text:
+                  raise SystemExit('Could not find command router insertion point')
+              text = text.replace(router_marker, router_add, 1)
+
+          path.write_text(text, encoding='utf-8')
+          print('VC+ source update applied.')
+
+      - name: Validate JavaScript
+        run: node --check src/app.js
+
+      - name: Commit update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app.js
+          if git diff --cached --quiet; then
+            echo "No source changes were needed."
+            exit 0
+          fi
+          git commit -m "Update VC+ vouch clearing and rank removal"
+          git push
