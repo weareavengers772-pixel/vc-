@@ -1,4 +1,4 @@
-name: VC+ Security Cleanup
+name: VC+ Permissions Cleanup
 on:
   push:
     branches: [main]
@@ -9,32 +9,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply VC+ permissions and remove security
+      - name: Restore clean source and apply permissions
         shell: bash
         run: |
+          git checkout 5f6b08681adbf58851de6eebd10cb77da2f2fc83 -- src/app.js
           python3 - <<'PY'
           from pathlib import Path
           import re
           p = Path('src/app.js')
           s = p.read_text()
-
-          # Remove all automatic security/anti-nuke code and stored security defaults.
-          s = re.sub(r'\n\s*c\.security \?\?= \{\};\n\s*c\.security\.enabled \?\?= true;\n\s*c\.security\.whitelist \?\?= \[\];\n\s*c\.security\.maxActions \?\?= 3;\n\s*c\.security\.windowMs \?\?= 10000;\n\s*c\.security\.actions \?\?= \{\};', '', s, count=1)
-          start = s.find('// VC+ SECURITY LAYER')
-          if start != -1:
-              end = s.find('client.once("ready"', start)
-              if end != -1:
-                  s = s[:start] + s[end:]
-
-          # AuditLogEvent is only used by the removed security layer.
+          s = re.sub(r'\nclient\.on\("roleCreate", async role => \{.*?\n\}\);\n', '\n', s, count=1, flags=re.S)
           s = s.replace('    ChannelType,\n    AuditLogEvent\n', '    ChannelType\n')
-
-          # -vc setup is server-owner only.
           s = s.replace('if (!canManageServer(message.member)) return deny(message);\n        const c = getGuildConfig(message.guild.id);', 'if (message.guild.ownerId !== message.author.id) return deny(message);\n        const c = getGuildConfig(message.guild.id);', 1)
-
-          # -ban is server-owner only and sends a DM plus a server confirmation.
-          old_ban = 'if (command === "ban") { if (!target.bannable) return reply(message, "```VC+\\nI cannot ban that member.\\n``` "); await target.ban({ reason: args.slice(1).join(" ") || "VC+ moderation" }); return reply(message, panel("Ban", `${target.user.tag} was banned.`)); }'
-          new_ban = '''if (command === "ban") {
+          old = 'if (command === "ban") { if (!target.bannable) return reply(message, "```VC+\\nI cannot ban that member.\\n``` "); await target.ban({ reason: args.slice(1).join(" ") || "VC+ moderation" }); return reply(message, panel("Ban", `${target.user.tag} was banned.`)); }'
+          new = '''if (command === "ban") {
               if (message.guild.ownerId !== message.author.id) return deny(message);
               if (target.id === message.guild.ownerId) return reply(message, panel("Ban", "The server owner cannot be banned."));
               if (!target.bannable) return reply(message, "```VC+\\nI cannot ban that member.\\n```");
@@ -43,47 +31,33 @@ jobs:
               await target.ban({ reason: `VC+ owner ban: ${reason}` });
               return reply(message, panel("Ban", `**${target.user.tag}** was banned.\\nReason: ${reason}\\nA ban notice was sent by DM.`));
           }'''
-          if old_ban in s:
-              s = s.replace(old_ban, new_ban, 1)
-          else:
-              s = s.replace('async function handleModeration(message, command, args) {\n    if (!canModerate(message.member)) return deny(message);', 'async function handleModeration(message, command, args) {\n    if (command === "ban" && message.guild.ownerId !== message.author.id) return deny(message);\n    if (!canModerate(message.member)) return deny(message);', 1)
-
-          # Protect Founder members from VC kick/disconnect/VC-ban/reject/STFU actions.
-          old_kick = 'if (sub === "kick" || sub === "disconnect") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ voice control"); return reply(message, panel("Voice", `${t.user.tag} was disconnected.`)); }'
-          new_kick = 'if (sub === "kick" || sub === "disconnect") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (isFounder(t)) return reply(message, panel("Voice", "Founder members cannot be kicked or disconnected from VC+ calls.")); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ voice control"); return reply(message, panel("Voice", `${t.user.tag} was disconnected.`)); }'
-          s = s.replace(old_kick, new_kick, 1)
-          old_bvr = 'if (sub === "ban" || sub === "reject") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); c.voice.banned[channel.id] ??= []; if (!c.voice.banned[channel.id].includes(t.id)) c.voice.banned[channel.id].push(t.id); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ VC ban").catch(() => {}); saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `${t.user.user?.tag || t.user.tag} was ${sub === "ban" ? "banned" : "rejected"}.`)); }'
-          # Current source uses target.user.tag in this block.
-          old_bvr2 = 'if (sub === "ban" || sub === "reject") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); c.voice.banned[channel.id] ??= []; if (!c.voice.banned[channel.id].includes(t.id)) c.voice.banned[channel.id].push(t.id); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ VC ban").catch(() => {}); saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `${t.user.tag} was ${sub === "ban" ? "banned" : "rejected"}.`)); }'
-          new_bvr = 'if (sub === "ban" || sub === "reject") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (isFounder(t)) return reply(message, panel("Voice", "Founder members cannot be VC banned or rejected.")); c.voice.banned[channel.id] ??= []; if (!c.voice.banned[channel.id].includes(t.id)) c.voice.banned[channel.id].push(t.id); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ VC ban").catch(() => {}); saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `${t.user.tag} was ${sub === "ban" ? "banned" : "rejected"}.`)); }'
-          s = s.replace(old_bvr2, new_bvr, 1)
-          old_stfu = 'if (sub === "stfu" || sub === "unstfu") { if (!hasGodAccess(message.member)) return deny(message); const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); await t.voice.setMute(sub === "stfu", `VC+ ${sub}`); return reply(message, panel("Voice", `${t.user.tag} ${sub === "stfu" ? "was server muted" : "is no longer server muted"}.`)); }'
-          new_stfu = 'if (sub === "stfu" || sub === "unstfu") { if (!hasGodAccess(message.member)) return deny(message); const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (isFounder(t)) return reply(message, panel("Voice", "Founder members cannot be server muted or unmuted through VC+.")); await t.voice.setMute(sub === "stfu", `VC+ ${sub}`); return reply(message, panel("Voice", `${t.user.tag} ${sub === "stfu" ? "was server muted" : "is no longer server muted"}.`)); }'
-          s = s.replace(old_stfu, new_stfu, 1)
-
-          # Expanded interface: protect Founder targets from voice-removal controls.
+          s = s.replace(old, new, 1)
+          old = 'if (sub === "kick" || sub === "disconnect") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ voice control"); return reply(message, panel("Voice", `${t.user.tag} was disconnected.`)); }'
+          new = 'if (sub === "kick" || sub === "disconnect") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (isFounder(t)) return reply(message, panel("Voice", "Founder members cannot be kicked or disconnected from VC+ calls.")); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ voice control"); return reply(message, panel("Voice", `${t.user.tag} was disconnected.`)); }'
+          s = s.replace(old, new, 1)
+          old = 'if (sub === "ban" || sub === "reject") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); c.voice.banned[channel.id] ??= []; if (!c.voice.banned[channel.id].includes(t.id)) c.voice.banned[channel.id].push(t.id); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ VC ban").catch(() => {}); saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `${t.user.tag} was ${sub === "ban" ? "banned" : "rejected"}.`)); }'
+          new = 'if (sub === "ban" || sub === "reject") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (isFounder(t)) return reply(message, panel("Voice", "Founder members cannot be VC banned or rejected.")); c.voice.banned[channel.id] ??= []; if (!c.voice.banned[channel.id].includes(t.id)) c.voice.banned[channel.id].push(t.id); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ VC ban").catch(() => {}); saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `${t.user.tag} was ${sub === "ban" ? "banned" : "rejected"}.`)); }'
+          s = s.replace(old, new, 1)
+          old = 'if (sub === "stfu" || sub === "unstfu") { if (!hasGodAccess(message.member)) return deny(message); const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); await t.voice.setMute(sub === "stfu", `VC+ ${sub}`); return reply(message, panel("Voice", `${t.user.tag} ${sub === "stfu" ? "was server muted" : "is no longer server muted"}.`)); }'
+          new = 'if (sub === "stfu" || sub === "unstfu") { if (!hasGodAccess(message.member)) return deny(message); const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (isFounder(t)) return reply(message, panel("Voice", "Founder members cannot be server muted through VC+.")); await t.voice.setMute(sub === "stfu", `VC+ ${sub}`); return reply(message, panel("Voice", `${t.user.tag} ${sub === "stfu" ? "was server muted" : "is no longer server muted"}.`)); }'
+          s = s.replace(old, new, 1)
           marker = 'const target = getUserFromInteraction(interaction);'
-          if marker in s:
-              s = s.replace(marker, marker + '\n            if (isFounder(target) && ["kick", "disconnect", "ban", "reject", "stfu", "unstfu"].includes(modalAction)) return interaction.reply({ ephemeral: true, content: "```VC+\\nFounder members are protected from these VC controls.\\n```" });', 1)
-
-          # Remove Security text from the expanded interface.
-          s = re.sub(r'\\n\\nSecurity: -security[^"`]*', '', s, flags=re.I)
-
-          # Update help text to show the new permissions.
+          insert = 'const target = getUserFromInteraction(interaction);\n            if (isFounder(target) && ["kick", "disconnect", "ban", "reject", "stfu", "unstfu"].includes(modalAction)) return interaction.reply({ ephemeral: true, content: "```VC+\\nFounder members are protected from these VC controls.\\n```" });'
+          s = s.replace(marker, insert, 1)
+          s = s.replace('Security: -security status, -security on, -security off, -security whitelist @user, -security unwhitelist @user, -security lockdown, -security unlock', '')
           s = s.replace('-ban @user [reason]\\nBan a member.', '-ban @user [reason]\\nServer owner only. Ban a member, DM the user, and confirm in the server.')
           s = s.replace('-vc setup\\nCreate Join-to-Create.', '-vc setup\\nServer owner only. Create Join-to-Create.')
           s = s.replace('-vc stfu @user\\nServer mute a user.', '-vc stfu @user\\nFounder and God only. Server mute a user.')
           s = s.replace('-vc unstfu @user\\nRemove server mute.', '-vc unstfu @user\\nFounder and God only. Remove server mute.')
-
           p.write_text(s)
           PY
           node --check src/app.js
-      - name: Commit changes
+      - name: Commit source and remove this one-time workflow
         shell: bash
         run: |
           git config user.name 'vcplus-bot'
           git config user.email 'actions@github.com'
-          if git diff --quiet; then echo 'No changes needed'; exit 0; fi
-          git add src/app.js
-          git commit -m 'Update VC+ owner and founder permissions'
+          rm -f .github/workflows/vcplus-security-update.yml
+          git add src/app.js .github/workflows/vcplus-security-update.yml
+          git commit -m 'Set VC+ owner founder and god permissions'
           git push
