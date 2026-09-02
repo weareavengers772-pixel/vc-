@@ -1,19 +1,83 @@
-// ============================================================
-// VC+ — CRASH-SAFE BOOTSTRAP
-// ============================================================
+import "dotenv/config";
 
 import {
     Client,
     GatewayIntentBits,
-    Partials
+    Partials,
+    PermissionsBitField,
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ChannelType,
+    AuditLogEvent
 } from "discord.js";
 
-const TOKEN = process.env.DISCORD_TOKEN;
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-if (!TOKEN) {
-    console.error("[VC+] DISCORD_TOKEN is missing.");
-    process.exit(1);
+
+// ============================================================
+// VC+ CONFIG
+// ============================================================
+
+const PREFIX = "-";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const DATA_DIR = path.join(__dirname, "data");
+
+if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+
+const RANK_FILE = path.join(DATA_DIR, "ranks.json");
+const CONFIG_FILE = path.join(DATA_DIR, "config.json");
+const FOREVER_BAN_FILE = path.join(DATA_DIR, "foreverbans.json");
+
+
+// ============================================================
+// SAFE JSON
+// ============================================================
+
+function loadJSON(file, fallback) {
+    try {
+        if (!fs.existsSync(file)) {
+            fs.writeFileSync(file, JSON.stringify(fallback, null, 2));
+            return structuredClone(fallback);
+        }
+
+        return JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch (error) {
+        console.error(`[FILE ERROR] ${file}`, error);
+
+        try {
+            fs.writeFileSync(file, JSON.stringify(fallback, null, 2));
+        } catch {}
+
+        return structuredClone(fallback);
+    }
+}
+
+function saveJSON(file, data) {
+    try {
+        fs.writeFileSync(file, JSON.stringify(data, null, 2));
+    } catch (error) {
+        console.error(`[SAVE ERROR] ${file}`, error);
+    }
+}
+
+
+let ranks = loadJSON(RANK_FILE, {});
+let configs = loadJSON(CONFIG_FILE, {});
+let foreverBans = loadJSON(FOREVER_BAN_FILE, {});
+
+
+// ============================================================
+// CLIENT
+// ============================================================
 
 const client = new Client({
     intents: [
@@ -27,743 +91,3127 @@ const client = new Client({
 
     partials: [
         Partials.Channel,
+        Partials.Message,
         Partials.GuildMember,
-        Partials.User,
-        Partials.Message
+        Partials.User
     ]
 });
 
+
 // ============================================================
-// GLOBAL ERROR PROTECTION
+// RANK SYSTEM
 // ============================================================
 
-process.on("unhandledRejection", error => {
-    console.error("[VC+] Unhandled Promise Rejection:", error);
-});
+const RANKS = {
+    founder: 10,
+    god: 9,
+    owner: 8,
+    "co-owner": 7,
+    executive: 6,
+    director: 5,
+    admin: 4,
+    moderator: 3,
+    staff: 2,
+    member: 1
+};
 
-process.on("uncaughtException", error => {
-    console.error("[VC+] Uncaught Exception:", error);
+const RANK_DISPLAY = {
+    founder: "Founder",
+    god: "God",
+    owner: "Owner",
+    "co-owner": "Co-Owner",
+    executive: "Executive",
+    director: "Director",
+    admin: "Admin",
+    moderator: "Moderator",
+    staff: "Staff",
+    member: "Member"
+};
 
-    // Do NOT immediately kill the process.
-    // Logging the error lets the bot continue when possible.
-});
 
-process.on("warning", warning => {
-    console.warn("[VC+] Node Warning:", warning);
-});
+function getStoredRank(guildId, userId) {
+    return ranks[guildId]?.[userId] || null;
+}
 
-process.on("SIGINT", async () => {
-    console.log("[VC+] Shutdown requested.");
 
-    try {
-        client.destroy();
-    } catch (error) {
-        console.error("[VC+] Shutdown error:", error);
+function getRankLevel(member) {
+    if (!member) return 0;
+
+    // Server owner always has Founder-level access.
+    if (member.guild.ownerId === member.id) {
+        return RANKS.founder;
     }
 
-    process.exit(0);
-});
+    const stored = getStoredRank(member.guild.id, member.id);
 
-process.on("SIGTERM", async () => {
-    console.log("[VC+] SIGTERM received.");
+    if (!stored) return 0;
 
-    try {
-        client.destroy();
-    } catch (error) {
-        console.error("[VC+] Shutdown error:", error);
+    return RANKS[stored] || 0;
+}
+
+
+function getRankName(member) {
+    if (!member) return "member";
+
+    if (member.guild.ownerId === member.id) {
+        return "founder";
     }
 
-    process.exit(0);
-});
+    return getStoredRank(member.guild.id, member.id) || "member";
+}
 
-// ============================================================
-// DISCORD CLIENT ERROR PROTECTION
-// ============================================================
 
-client.on("error", error => {
-    console.error("[VC+] Discord client error:", error);
-});
+function hasRank(member, required) {
+    return getRankLevel(member) >= (RANKS[required] || 999);
+}
 
-client.on("warn", warning => {
-    console.warn("[VC+] Discord warning:", warning);
-});
 
-client.on("shardError", error => {
-    console.error("[VC+] Shard error:", error);
-});
+function isFounder(member) {
+    return getRankLevel(member) >= RANKS.founder;
+}
 
-client.on("shardReconnecting", shardId => {
-    console.log(`[VC+] Shard ${shardId} reconnecting...`);
-});
 
-client.on("shardResume", (shardId, replayedEvents) => {
-    console.log(
-        `[VC+] Shard ${shardId} resumed. Replayed ${replayedEvents} events.`
+function isGod(member) {
+    return getRankLevel(member) >= RANKS.god;
+}
+
+
+function isGodmode(member) {
+    const guildData = configs[member.guild.id];
+
+    return guildData?.godmode?.includes(member.id) || false;
+}
+
+
+function hasGodAccess(member) {
+    return (
+        member.guild.ownerId === member.id ||
+        isFounder(member) ||
+        isGod(member) ||
+        isGodmode(member)
     );
-});
+}
 
-client.on("shardDisconnect", (event, shardId) => {
-    console.warn(
-        `[VC+] Shard ${shardId} disconnected.`,
-        event
+
+function canModerate(member) {
+    return (
+        member.guild.ownerId === member.id ||
+        getRankLevel(member) >= RANKS.moderator ||
+        member.permissions.has(PermissionsBitField.Flags.BanMembers) ||
+        member.permissions.has(PermissionsBitField.Flags.KickMembers)
     );
-});
+}
+
+
+function canManageServer(member) {
+    return (
+        member.guild.ownerId === member.id ||
+        isFounder(member) ||
+        getRankLevel(member) >= RANKS.owner ||
+        member.permissions.has(PermissionsBitField.Flags.Administrator)
+    );
+}
+
+
+function canManageVouches(member) {
+    return (
+        member.guild.ownerId === member.id ||
+        isFounder(member)
+    );
+}
+
 
 // ============================================================
-// SAFE EXECUTOR
+// GUILD CONFIG
 // ============================================================
 
-async function safeExecute(fn, label = "operation") {
+function getGuildConfig(guildId) {
+    if (!configs[guildId]) {
+        configs[guildId] = {
+            joinToCreate: null,
+            interfaceChannel: null,
+            interfaceMessage: null,
+
+            vouchRole: null,
+            vouches: {},
+
+            godmode: [],
+
+            filter: [],
+
+            voice: {
+                owners: {},
+                banned: {},
+                permitted: {},
+                locked: {},
+                limits: {}
+            },
+
+            temporaryChannels: []
+        };
+
+        saveJSON(CONFIG_FILE, configs);
+    }
+
+    return configs[guildId];
+}
+
+
+// ============================================================
+// SAFE HELPERS
+// ============================================================
+
+async function safeReply(message, content) {
     try {
-        return await fn();
+        return await message.reply(content);
     } catch (error) {
-        console.error(`[VC+] ${label} failed:`, error);
+        console.error("[REPLY ERROR]", error);
         return null;
     }
 }
 
-// ============================================================
-// SAFE MESSAGE REPLY
-// ============================================================
 
-async function safeReply(message, payload) {
+async function safeEdit(message, content) {
     try {
-        if (!message) return null;
-
-        return await message.reply(payload);
+        return await message.edit(content);
     } catch (error) {
-        console.error("[VC+] Failed to reply:", error);
+        console.error("[EDIT ERROR]", error);
         return null;
     }
 }
 
-// ============================================================
-// SAFE INTERACTION REPLY
-// ============================================================
-
-async function safeInteractionReply(interaction, payload) {
-    try {
-        if (!interaction) return;
-
-        if (interaction.replied || interaction.deferred) {
-            return await interaction.followUp(payload);
-        }
-
-        return await interaction.reply(payload);
-    } catch (error) {
-        console.error(
-            "[VC+] Failed to respond to interaction:",
-            error
-        );
-    }
-}
-
-// ============================================================
-// SAFE DELETE
-// ============================================================
 
 async function safeDelete(message) {
     try {
-        if (!message) return false;
-
-        if (!message.deletable) {
-            return false;
+        if (message?.deletable) {
+            await message.delete();
         }
-
-        await message.delete();
-        return true;
-    } catch (error) {
-        console.warn(
-            "[VC+] Could not delete message:",
-            error.message
-        );
-
-        return false;
-    }
+    } catch {}
 }
 
-// ============================================================
-// SAFE CHANNEL DELETE
-// ============================================================
 
-async function safeChannelDelete(channel, reason) {
+async function safeDM(user, content) {
     try {
-        if (!channel) return false;
-
-        await channel.delete(reason);
-        return true;
-    } catch (error) {
-        console.warn(
-            "[VC+] Could not delete channel:",
-            error.message
-        );
-
-        return false;
-    }
+        await user.send(content);
+    } catch {}
 }
 
+
+function panel(title, description) {
+    return {
+        embeds: [
+            new EmbedBuilder()
+                .setTitle(`VC+ | ${title}`)
+                .setDescription(description)
+                .setFooter({
+                    text: "VC+"
+                })
+        ]
+    };
+}
+
+
+async function deny(message) {
+    return safeReply(
+        message,
+        "```VC+\nYou do not have permission to use this command.\n```"
+    );
+}
+
+
+async function usage(message, text) {
+    return safeReply(
+        message,
+        `\`\`\`VC+\nUsage: ${text}\n\`\`\``
+    );
+}
+
+
 // ============================================================
-// SAFE MEMBER ACTION
+// HELP SYSTEM
 // ============================================================
 
-async function safeMemberAction(action, member, label) {
-    try {
-        if (!member) return false;
+const HELP_PAGES = [
 
-        if (!member.manageable) {
-            console.warn(
-                `[VC+] Cannot manage member for ${label}.`
+    {
+        name: "General",
+        description:
+`-help
+Open the VC+ help menu.
+
+-ping
+Check bot latency.`
+    },
+
+    {
+        name: "Moderation",
+        description:
+`-ban @user [reason]
+Ban a member.
+
+-unban USER_ID
+Unban a user.
+
+-unbanall
+Unban all users.
+
+-kick @user [reason]
+Kick a member.
+
+-timeout @user [duration] [reason]
+Timeout a member.
+
+-untimeout @user
+Remove a timeout.
+
+-foreverban @user [reason]
+Permanently ban a member through VC+.
+
+-unforeverban USER_ID
+Remove a VC+ forever ban.
+
+-purge amount
+Delete messages.
+
+-clear amount
+Alias for purge.`
+    },
+
+    {
+        name: "Ranks",
+        description:
+`-rank @user founder
+Set Founder.
+
+-rank @user god
+Set God.
+
+-rank @user owner
+Set Owner.
+
+-rank @user co-owner
+Set Co-Owner.
+
+-rank @user executive
+Set Executive.
+
+-rank @user director
+Set Director.
+
+-rank @user admin
+Set Admin.
+
+-rank @user moderator
+Set Moderator.
+
+-rank @user staff
+Set Staff.
+
+-rank @user member
+Set Member.
+
+-rank @user
+View rank.
+
+-ranklist
+View rank hierarchy.`
+    },
+
+    {
+        name: "Godmode",
+        description:
+`-godmode @user
+Give internal VC+ Godmode.
+
+-godmode remove @user
+Remove internal Godmode.
+
+Godmode is an internal VC+ permission and is not a Discord role.`
+    },
+
+    {
+        name: "Vouches",
+        description:
+`-vouch role set @Role
+Set the vouch role.
+
+-vouch role
+View the configured vouch role.
+
+-vouch give @user reason
+Give a vouch and automatically assign the configured role.
+
+-vouch clear @user
+Clear a user's vouches.
+
+-vouch clear everyone
+Clear all vouches.
+
+-vouch list
+View vouches.
+
+-vouches @user
+View a user's vouches.`
+    },
+
+    {
+        name: "Filter",
+        description:
+`-filter add word
+Add a filtered word.
+
+-filter remove word
+Remove a filtered word.`
+    },
+
+    {
+        name: "Voice",
+        description:
+`-vc kick @user
+Disconnect a user.
+
+-vc disconnect @user
+Disconnect a user.
+
+-vc ban @user
+Ban a user from your temporary VC.
+
+-vc reject @user
+Reject a user.
+
+-vc permit @user
+Permit a user.
+
+-vc lock
+Lock your VC.
+
+-vc unlock
+Unlock your VC.
+
+-vc limit number
+Set the VC user limit.
+
+-vc rename name
+Rename your VC.
+
+-vc transfer @user
+Transfer VC ownership.
+
+-vc claim
+Claim an abandoned VC.
+
+-vc forceclaim
+Force claim a VC.
+
+-vc stfu @user
+Server voice mute.
+
+-vc unstfu @user
+Remove server voice mute.`
+    },
+
+    {
+        name: "Server Setup",
+        description:
+`-vc setup
+Create the Join-to-Create system.
+
+-interface
+Create the VC+ voice interface.
+
+Join-to-Create automatically creates temporary voice channels when members join the creation channel.`
+    }
+];
+
+
+function helpButtons(page) {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId("help_prev")
+            .setLabel("<")
+            .setStyle(ButtonStyle.Secondary),
+
+        new ButtonBuilder()
+            .setCustomId(`help_page_${page}`)
+            .setLabel(`${page + 1}`)
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(true),
+
+        new ButtonBuilder()
+            .setCustomId("help_next")
+            .setLabel(">")
+            .setStyle(ButtonStyle.Secondary)
+    );
+}
+
+
+function helpPayload(page) {
+    const current = HELP_PAGES[page];
+
+    return {
+        embeds: [
+            new EmbedBuilder()
+                .setTitle(`VC+ | ${current.name}`)
+                .setDescription(`\`\`\`\n${current.description}\n\`\`\``)
+                .setFooter({
+                    text: `Page ${page + 1}/${HELP_PAGES.length} • Use -help category for direct access`
+                })
+        ],
+
+        components: [
+            helpButtons(page)
+        ]
+    };
+}
+
+
+async function handleHelp(message, args) {
+    const category = args[0]?.toLowerCase();
+
+    if (category) {
+        const index = HELP_PAGES.findIndex(
+            page => page.name.toLowerCase() === category
+        );
+
+        if (index === -1) {
+            return safeReply(
+                message,
+                "```VC+\nUnknown help category.\nUse -help to view the available categories.\n```"
             );
-
-            return false;
         }
 
-        await action(member);
-
-        return true;
-    } catch (error) {
-        console.warn(
-            `[VC+] ${label} failed:`,
-            error.message
-        );
-
-        return false;
+        return safeReply(message, helpPayload(index));
     }
+
+    return safeReply(message, helpPayload(0));
 }
 
+
 // ============================================================
-// SAFE VOICE ACTION
+// PING
 // ============================================================
 
-async function safeVoiceAction(action, member, label) {
-    try {
-        if (!member) return false;
+async function handlePing(message) {
+    const sent = await safeReply(
+        message,
+        "```VC+\nPinging...\n```"
+    );
 
-        if (!member.voice) {
-            return false;
-        }
+    if (!sent) return;
 
-        await action(member.voice);
+    const latency =
+        sent.createdTimestamp - message.createdTimestamp;
 
-        return true;
-    } catch (error) {
-        console.warn(
-            `[VC+] Voice action "${label}" failed:`,
-            error.message
-        );
-
-        return false;
-    }
+    await safeEdit(
+        sent,
+        `\`\`\`\nVC+\nPong\nLatency: ${latency}ms\nWebSocket: ${client.ws.ping}ms\n\`\`\``
+    );
 }
 
+
 // ============================================================
-// COMMAND COOLDOWN
+// RANK
 // ============================================================
 
-const cooldowns = new Map();
+async function handleRank(message, args) {
+    const target = message.mentions.members.first();
 
-const COMMAND_COOLDOWN = 750;
+    if (!target) {
+        return usage(
+            message,
+            "-rank @user [rank]"
+        );
+    }
 
-function isOnCooldown(userId, command) {
-    const key = `${userId}:${command}`;
-    const now = Date.now();
+    if (!args[1]) {
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\nUser: ${target.user.tag}\nRank: ${RANK_DISPLAY[getRankName(target)] || "Member"}\n\`\`\``
+        );
+    }
 
-    const lastUsed = cooldowns.get(key);
+    if (!canManageServer(message.member)) {
+        return deny(message);
+    }
+
+    const requested = args[1].toLowerCase();
+
+    if (!RANKS[requested]) {
+        return safeReply(
+            message,
+            "```VC+\nInvalid rank.\n```"
+        );
+    }
+
+    const actorLevel = getRankLevel(message.member);
+    const targetLevel = getRankLevel(target);
+    const newLevel = RANKS[requested];
 
     if (
-        lastUsed &&
-        now - lastUsed < COMMAND_COOLDOWN
+        message.guild.ownerId !== message.author.id &&
+        newLevel >= actorLevel
     ) {
+        return safeReply(
+            message,
+            "```VC+\nYou cannot assign a rank equal to or higher than your own rank.\n```"
+        );
+    }
+
+    if (
+        message.guild.ownerId !== message.author.id &&
+        targetLevel >= actorLevel
+    ) {
+        return safeReply(
+            message,
+            "```VC+\nYou cannot change the rank of someone at or above your rank.\n```"
+        );
+    }
+
+    if (!ranks[message.guild.id]) {
+        ranks[message.guild.id] = {};
+    }
+
+    ranks[message.guild.id][target.id] = requested;
+
+    saveJSON(RANK_FILE, ranks);
+
+    return safeReply(
+        message,
+        `\`\`\`\nVC+\n${target.user.tag}\nRank set to ${RANK_DISPLAY[requested]}.\n\`\`\``
+    );
+}
+
+
+async function handleRankList(message) {
+    return safeReply(
+        message,
+        `\`\`\`\nVC+ | RANK HIERARCHY\n\n10  Founder\n9   God\n8   Owner\n7   Co-Owner\n6   Executive\n5   Director\n4   Admin\n3   Moderator\n2   Staff\n1   Member\n\nServer Owner = Founder\n\`\`\``
+    );
+}
+
+
+// ============================================================
+// GODMODE
+// ============================================================
+
+async function handleGodmode(message, args) {
+    if (!isFounder(message.member)) {
+        return deny(message);
+    }
+
+    const guildConfig = getGuildConfig(message.guild.id);
+
+    if (args[0]?.toLowerCase() === "remove") {
+        const target = message.mentions.members.first();
+
+        if (!target) {
+            return usage(message, "-godmode remove @user");
+        }
+
+        guildConfig.godmode =
+            guildConfig.godmode.filter(id => id !== target.id);
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\nGodmode removed from ${target.user.tag}.\n\`\`\``
+        );
+    }
+
+    const target = message.mentions.members.first();
+
+    if (!target) {
+        return usage(message, "-godmode @user");
+    }
+
+    if (!guildConfig.godmode.includes(target.id)) {
+        guildConfig.godmode.push(target.id);
+    }
+
+    saveJSON(CONFIG_FILE, configs);
+
+    return safeReply(
+        message,
+        `\`\`\`\nVC+\nGodmode granted to ${target.user.tag}.\n\`\`\``
+    );
+}
+
+
+// ============================================================
+// BAN
+// ============================================================
+
+async function handleBan(message, args) {
+    if (!canModerate(message.member)) {
+        return deny(message);
+    }
+
+    const target = message.mentions.members.first();
+
+    if (!target) {
+        return usage(message, "-ban @user [reason]");
+    }
+
+    if (target.id === message.author.id) {
+        return safeReply(
+            message,
+            "```VC+\nYou cannot ban yourself.\n```"
+        );
+    }
+
+    if (
+        message.guild.ownerId !== message.author.id &&
+        getRankLevel(target) >= getRankLevel(message.member)
+    ) {
+        return safeReply(
+            message,
+            "```VC+\nYou cannot moderate someone at or above your rank.\n```"
+        );
+    }
+
+    if (!target.bannable) {
+        return safeReply(
+            message,
+            "```VC+\nI cannot ban that member.\n```"
+        );
+    }
+
+    const reason =
+        args.slice(1).join(" ") || "No reason provided";
+
+    try {
+        await target.ban({
+            reason: `${message.author.tag}: ${reason}`
+        });
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\n${target.user.tag} was banned.\nReason: ${reason}\n\`\`\``
+        );
+    } catch (error) {
+        console.error("[BAN ERROR]", error);
+
+        return safeReply(
+            message,
+            "```VC+\nFailed to ban that member.\n```"
+        );
+    }
+}
+
+
+// ============================================================
+// UNBAN
+// ============================================================
+
+async function handleUnban(message, args) {
+    if (!canModerate(message.member)) {
+        return deny(message);
+    }
+
+    const userId = args[0];
+
+    if (!userId) {
+        return usage(message, "-unban USER_ID");
+    }
+
+    try {
+        await message.guild.members.unban(
+            userId,
+            `Unbanned by ${message.author.tag}`
+        );
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\n${userId} has been unbanned.\n\`\`\``
+        );
+    } catch (error) {
+        console.error("[UNBAN ERROR]", error);
+
+        return safeReply(
+            message,
+            "```VC+\nThat user could not be unbanned.\n```"
+        );
+    }
+}
+
+
+// ============================================================
+// UNBAN ALL
+// ============================================================
+
+async function handleUnbanAll(message) {
+    if (!isFounder(message.member)) {
+        return deny(message);
+    }
+
+    try {
+        const bans = await message.guild.bans.fetch();
+
+        if (!bans.size) {
+            return safeReply(
+                message,
+                "```VC+\nThere are no banned users.\n```"
+            );
+        }
+
+        let count = 0;
+
+        for (const [id] of bans) {
+            try {
+                await message.guild.members.unban(
+                    id,
+                    `VC+ unbanall by ${message.author.tag}`
+                );
+
+                count++;
+
+                await new Promise(resolve =>
+                    setTimeout(resolve, 250)
+                );
+
+            } catch {}
+        }
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\nUnbanned ${count} user(s).\n\`\`\``
+        );
+
+    } catch (error) {
+        console.error("[UNBANALL ERROR]", error);
+
+        return safeReply(
+            message,
+            "```VC+\nFailed to complete unbanall.\n```"
+        );
+    }
+}
+
+
+// ============================================================
+// KICK
+// ============================================================
+
+async function handleKick(message, args) {
+    if (!canModerate(message.member)) {
+        return deny(message);
+    }
+
+    const target = message.mentions.members.first();
+
+    if (!target) {
+        return usage(message, "-kick @user [reason]");
+    }
+
+    if (!target.kickable) {
+        return safeReply(
+            message,
+            "```VC+\nI cannot kick that member.\n```"
+        );
+    }
+
+    const reason =
+        args.slice(1).join(" ") || "No reason provided";
+
+    try {
+        await target.kick(
+            `${message.author.tag}: ${reason}`
+        );
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\n${target.user.tag} was kicked.\nReason: ${reason}\n\`\`\``
+        );
+    } catch (error) {
+        console.error("[KICK ERROR]", error);
+
+        return safeReply(
+            message,
+            "```VC+\nFailed to kick that member.\n```"
+        );
+    }
+}
+
+
+// ============================================================
+// TIMEOUT
+// ============================================================
+
+function parseDuration(input) {
+    if (!input) return null;
+
+    const match = /^(\d+)(s|m|h|d)$/i.exec(input);
+
+    if (!match) return null;
+
+    const amount = Number(match[1]);
+    const unit = match[2].toLowerCase();
+
+    const multipliers = {
+        s: 1000,
+        m: 60 * 1000,
+        h: 60 * 60 * 1000,
+        d: 24 * 60 * 60 * 1000
+    };
+
+    return amount * multipliers[unit];
+}
+
+
+async function handleTimeout(message, args) {
+    if (!canModerate(message.member)) {
+        return deny(message);
+    }
+
+    const target = message.mentions.members.first();
+
+    if (!target) {
+        return usage(
+            message,
+            "-timeout @user 10m [reason]"
+        );
+    }
+
+    const duration = parseDuration(args[1]);
+
+    if (!duration) {
+        return safeReply(
+            message,
+            "```VC+\nInvalid duration. Example: 10m, 1h, 2d\n```"
+        );
+    }
+
+    const reason =
+        args.slice(2).join(" ") || "No reason provided";
+
+    try {
+        await target.timeout(
+            duration,
+            `${message.author.tag}: ${reason}`
+        );
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\n${target.user.tag} was timed out.\nDuration: ${args[1]}\nReason: ${reason}\n\`\`\``
+        );
+    } catch (error) {
+        console.error("[TIMEOUT ERROR]", error);
+
+        return safeReply(
+            message,
+            "```VC+\nFailed to timeout that member.\n```"
+        );
+    }
+}
+
+
+// ============================================================
+// UNTIMEOUT
+// ============================================================
+
+async function handleUntimeout(message, args) {
+    if (!canModerate(message.member)) {
+        return deny(message);
+    }
+
+    const target = message.mentions.members.first();
+
+    if (!target) {
+        return usage(message, "-untimeout @user");
+    }
+
+    try {
+        await target.timeout(
+            null,
+            `Untimeout by ${message.author.tag}`
+        );
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\n${target.user.tag} is no longer timed out.\n\`\`\``
+        );
+    } catch (error) {
+        console.error("[UNTIMEOUT ERROR]", error);
+
+        return safeReply(
+            message,
+            "```VC+\nFailed to remove the timeout.\n```"
+        );
+    }
+}
+
+
+// ============================================================
+// FOREVER BAN
+// ============================================================
+
+async function handleForeverBan(message, args) {
+    if (!isFounder(message.member)) {
+        return deny(message);
+    }
+
+    const target = message.mentions.members.first();
+
+    if (!target) {
+        return usage(
+            message,
+            "-foreverban @user [reason]"
+        );
+    }
+
+    const reason =
+        args.slice(1).join(" ") || "No reason provided";
+
+    if (!foreverBans[message.guild.id]) {
+        foreverBans[message.guild.id] = {};
+    }
+
+    foreverBans[message.guild.id][target.id] = {
+        reason,
+        addedBy: message.author.id,
+        timestamp: Date.now()
+    };
+
+    saveJSON(FOREVER_BAN_FILE, foreverBans);
+
+    try {
+        if (target.bannable) {
+            await target.ban({
+                reason: `VC+ Forever Ban: ${reason}`
+            });
+        }
+    } catch (error) {
+        console.error("[FOREVER BAN]", error);
+    }
+
+    return safeReply(
+        message,
+        `\`\`\`\nVC+\n${target.user.tag} is now forever banned.\nReason: ${reason}\n\`\`\``
+    );
+}
+
+
+// ============================================================
+// UNFOREVER BAN
+// ============================================================
+
+async function handleUnForeverBan(message, args) {
+    if (!isFounder(message.member)) {
+        return deny(message);
+    }
+
+    const userId = args[0];
+
+    if (!userId) {
+        return usage(
+            message,
+            "-unforeverban USER_ID"
+        );
+    }
+
+    if (foreverBans[message.guild.id]) {
+        delete foreverBans[message.guild.id][userId];
+    }
+
+    saveJSON(FOREVER_BAN_FILE, foreverBans);
+
+    return safeReply(
+        message,
+        `\`\`\`\nVC+\n${userId} removed from the forever-ban list.\n\`\`\``
+    );
+}
+
+
+// ============================================================
+// PURGE
+// ============================================================
+
+async function handlePurge(message, args) {
+    if (
+        !canManageServer(message.member) &&
+        !message.member.permissions.has(
+            PermissionsBitField.Flags.ManageMessages
+        )
+    ) {
+        return deny(message);
+    }
+
+    const amount = Number(args[0]);
+
+    if (
+        !Number.isInteger(amount) ||
+        amount < 1 ||
+        amount > 100
+    ) {
+        return usage(message, "-purge 1-100");
+    }
+
+    try {
+        const deleted =
+            await message.channel.bulkDelete(
+                amount,
+                true
+            );
+
+        const response = await safeReply(
+            message,
+            `\`\`\`\nVC+\nDeleted ${deleted.size} message(s).\n\`\`\``
+        );
+
+        if (response) {
+            setTimeout(() => safeDelete(response), 3000);
+        }
+
+    } catch (error) {
+        console.error("[PURGE ERROR]", error);
+
+        return safeReply(
+            message,
+            "```VC+\nFailed to delete messages.\n```"
+        );
+    }
+}
+
+
+// ============================================================
+// VOUCH
+// ============================================================
+
+async function handleVouch(message, args) {
+    const guildConfig =
+        getGuildConfig(message.guild.id);
+
+    const sub = args[0]?.toLowerCase();
+
+    if (sub === "role") {
+
+        if (!canManageVouches(message.member)) {
+            return deny(message);
+        }
+
+        if (args[1]?.toLowerCase() === "set") {
+            const role =
+                message.mentions.roles.first();
+
+            if (!role) {
+                return usage(
+                    message,
+                    "-vouch role set @Role"
+                );
+            }
+
+            guildConfig.vouchRole = role.id;
+
+            saveJSON(CONFIG_FILE, configs);
+
+            return safeReply(
+                message,
+                `\`\`\`\nVC+\nVouch role set to ${role.name}.\n\`\`\``
+            );
+        }
+
+        const role =
+            guildConfig.vouchRole
+                ? message.guild.roles.cache.get(
+                    guildConfig.vouchRole
+                )
+                : null;
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\nVouch Role: ${role ? role.name : "Not configured"}\n\`\`\``
+        );
+    }
+
+
+    if (sub === "give") {
+
+        if (!canManageVouches(message.member)) {
+            return deny(message);
+        }
+
+        const target =
+            message.mentions.members.first();
+
+        if (!target) {
+            return usage(
+                message,
+                "-vouch give @user reason"
+            );
+        }
+
+        const reason =
+            args.slice(2).join(" ") ||
+            "No reason provided";
+
+        if (!guildConfig.vouches[target.id]) {
+            guildConfig.vouches[target.id] = [];
+        }
+
+        guildConfig.vouches[target.id].push({
+            by: message.author.id,
+            reason,
+            timestamp: Date.now()
+        });
+
+        // Automatically assign configured role.
+        if (guildConfig.vouchRole) {
+            const role =
+                message.guild.roles.cache.get(
+                    guildConfig.vouchRole
+                );
+
+            if (role && !target.roles.cache.has(role.id)) {
+                try {
+                    await target.roles.add(
+                        role,
+                        `VC+ vouch by ${message.author.tag}`
+                    );
+                } catch (error) {
+                    console.error(
+                        "[VOUCH ROLE ERROR]",
+                        error
+                    );
+                }
+            }
+        }
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\nVouch added to ${target.user.tag}.\nReason: ${reason}\n\`\`\``
+        );
+    }
+
+
+    if (sub === "clear") {
+
+        if (!canManageVouches(message.member)) {
+            return deny(message);
+        }
+
+        if (args[1]?.toLowerCase() === "everyone") {
+            guildConfig.vouches = {};
+
+            saveJSON(CONFIG_FILE, configs);
+
+            return safeReply(
+                message,
+                "```VC+\nAll vouches cleared.\n```"
+            );
+        }
+
+        const target =
+            message.mentions.members.first();
+
+        if (!target) {
+            return usage(
+                message,
+                "-vouch clear @user"
+            );
+        }
+
+        delete guildConfig.vouches[target.id];
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\nVouches cleared for ${target.user.tag}.\n\`\`\``
+        );
+    }
+
+
+    if (sub === "list") {
+        return sendVouchList(message);
+    }
+
+    return safeReply(
+        message,
+        "```VC+\nVouch commands:\n-vouch role\n-vouch role set @Role\n-vouch give @user reason\n-vouch clear @user\n-vouch clear everyone\n-vouch list\n```"
+    );
+}
+
+
+async function sendVouchList(message) {
+    const guildConfig =
+        getGuildConfig(message.guild.id);
+
+    const entries =
+        Object.entries(guildConfig.vouches);
+
+    if (!entries.length) {
+        return safeReply(
+            message,
+            "```VC+\nNo vouches have been recorded.\n```"
+        );
+    }
+
+    let text = "";
+
+    for (const [userId, list] of entries.slice(0, 20)) {
+        text += `${userId}: ${list.length} vouch(es)\n`;
+    }
+
+    return safeReply(
+        message,
+        `\`\`\`\nVC+ | VOUCHES\n\n${text}\n\`\`\``
+    );
+}
+
+
+async function handleVouches(message, args) {
+    const target =
+        message.mentions.members.first();
+
+    if (!target) {
+        return usage(
+            message,
+            "-vouches @user"
+        );
+    }
+
+    const guildConfig =
+        getGuildConfig(message.guild.id);
+
+    const list =
+        guildConfig.vouches[target.id] || [];
+
+    if (!list.length) {
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\n${target.user.tag} has 0 vouches.\n\`\`\``
+        );
+    }
+
+    const text = list
+        .slice(-10)
+        .map(
+            (v, i) =>
+                `${i + 1}. ${v.reason}`
+        )
+        .join("\n");
+
+    return safeReply(
+        message,
+        `\`\`\`\nVC+ | ${target.user.tag}\n\nVouches: ${list.length}\n\n${text}\n\`\`\``
+    );
+}
+
+
+// ============================================================
+// FILTER
+// ============================================================
+
+async function handleFilter(message, args) {
+    if (!canManageServer(message.member)) {
+        return deny(message);
+    }
+
+    const sub = args[0]?.toLowerCase();
+    const word = args.slice(1).join(" ").toLowerCase();
+
+    const guildConfig =
+        getGuildConfig(message.guild.id);
+
+    if (sub === "add") {
+
+        if (!word) {
+            return usage(
+                message,
+                "-filter add word"
+            );
+        }
+
+        if (!guildConfig.filter.includes(word)) {
+            guildConfig.filter.push(word);
+        }
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\nAdded "${word}" to the filter.\n\`\`\``
+        );
+    }
+
+    if (sub === "remove") {
+
+        if (!word) {
+            return usage(
+                message,
+                "-filter remove word"
+            );
+        }
+
+        guildConfig.filter =
+            guildConfig.filter.filter(
+                item => item !== word
+            );
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\nRemoved "${word}" from the filter.\n\`\`\``
+        );
+    }
+
+    return safeReply(
+        message,
+        "```VC+\n-filter add word\n-filter remove word\n```"
+    );
+}
+
+
+// ============================================================
+// VOICE HELPERS
+// ============================================================
+
+function getVoiceChannel(member) {
+    return member?.voice?.channel || null;
+}
+
+
+function isTemporaryVC(guildConfig, channelId) {
+    return guildConfig.temporaryChannels.includes(
+        channelId
+    );
+}
+
+
+function isVCOwner(member, channel) {
+    const guildConfig =
+        getGuildConfig(member.guild.id);
+
+    return (
+        guildConfig.voice.owners[channel.id] ===
+        member.id
+    );
+}
+
+
+function canControlVC(member, channel) {
+    return (
+        member.guild.ownerId === member.id ||
+        isFounder(member) ||
+        isGod(member) ||
+        isGodmode(member) ||
+        isVCOwner(member, channel)
+    );
+}
+
+
+// ============================================================
+// VC SETUP
+// ============================================================
+
+async function handleVCSetup(message) {
+    if (!canManageServer(message.member)) {
+        return deny(message);
+    }
+
+    const guildConfig =
+        getGuildConfig(message.guild.id);
+
+    if (guildConfig.joinToCreate) {
+        const existing =
+            message.guild.channels.cache.get(
+                guildConfig.joinToCreate
+            );
+
+        if (existing) {
+            return safeReply(
+                message,
+                `\`\`\`\nVC+\nJoin-to-Create is already configured.\nChannel: ${existing.name}\n\`\`\``
+            );
+        }
+    }
+
+    try {
+        const category =
+            await message.guild.channels.create({
+                name: "VC+",
+                type: ChannelType.GuildCategory
+            });
+
+        const createChannel =
+            await message.guild.channels.create({
+                name: "Join To Create",
+                type: ChannelType.GuildVoice,
+                parent: category.id
+            });
+
+        guildConfig.joinToCreate =
+            createChannel.id;
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+ | SERVER SETUP\n\nJoin-to-Create enabled.\n\nJoin channel: ${createChannel.name}\nCategory: ${category.name}\n\`\`\``
+        );
+
+    } catch (error) {
+        console.error("[VC SETUP ERROR]", error);
+
+        return safeReply(
+            message,
+            "```VC+\nFailed to set up Join-to-Create.\nMake sure I have Manage Channels permission.\n```"
+        );
+    }
+}
+
+
+// ============================================================
+// VOICE INTERFACE
+// ============================================================
+
+async function handleInterface(message) {
+    if (!canManageServer(message.member)) {
+        return deny(message);
+    }
+
+    const guildConfig =
+        getGuildConfig(message.guild.id);
+
+    try {
+        const channel =
+            await message.guild.channels.create({
+                name: "VC+ Interface",
+                type: ChannelType.GuildText
+            });
+
+        const sent =
+            await channel.send({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle("VC+ | Voice Interface")
+                        .setDescription(
+`Use the controls below to manage your temporary voice channel.
+
+VC controls are available to the owner of the temporary channel.`
+                        )
+                ],
+
+                components: [
+                    new ActionRowBuilder().addComponents(
+
+                        new ButtonBuilder()
+                            .setCustomId("vc_lock")
+                            .setLabel("Lock")
+                            .setStyle(ButtonStyle.Secondary),
+
+                        new ButtonBuilder()
+                            .setCustomId("vc_unlock")
+                            .setLabel("Unlock")
+                            .setStyle(ButtonStyle.Secondary),
+
+                        new ButtonBuilder()
+                            .setCustomId("vc_claim")
+                            .setLabel("Claim")
+                            .setStyle(ButtonStyle.Secondary)
+                    )
+                ]
+            });
+
+        guildConfig.interfaceChannel =
+            channel.id;
+
+        guildConfig.interfaceMessage =
+            sent.id;
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\nVoice interface created in ${channel.name}.\n\`\`\``
+        );
+
+    } catch (error) {
+        console.error("[INTERFACE ERROR]", error);
+
+        return safeReply(
+            message,
+            "```VC+\nFailed to create the interface.\n```"
+        );
+    }
+}
+
+
+// ============================================================
+// VC COMMAND
+// ============================================================
+
+async function handleVC(message, args) {
+
+    const sub = args[0]?.toLowerCase();
+
+    if (sub === "setup") {
+        return handleVCSetup(message);
+    }
+
+    const member = message.member;
+    const channel = getVoiceChannel(member);
+
+    if (!channel) {
+        return safeReply(
+            message,
+            "```VC+\nYou must be in a voice channel.\n```"
+        );
+    }
+
+    const guildConfig =
+        getGuildConfig(message.guild.id);
+
+    if (
+        !isTemporaryVC(
+            guildConfig,
+            channel.id
+        )
+    ) {
+        return safeReply(
+            message,
+            "```VC+\nYou must be in a VC+ temporary voice channel.\n```"
+        );
+    }
+
+
+    // ========================================================
+    // KICK / DISCONNECT
+    // ========================================================
+
+    if (
+        sub === "kick" ||
+        sub === "disconnect"
+    ) {
+        if (!canControlVC(member, channel)) {
+            return deny(message);
+        }
+
+        const target =
+            message.mentions.members.first();
+
+        if (!target) {
+            return usage(
+                message,
+                `-vc ${sub} @user`
+            );
+        }
+
+        if (
+            target.voice.channelId !==
+            channel.id
+        ) {
+            return safeReply(
+                message,
+                "```VC+\nThat user is not in your VC.\n```"
+            );
+        }
+
+        try {
+            await target.voice.disconnect(
+                "VC+ voice moderation"
+            );
+
+            return safeReply(
+                message,
+                `\`\`\`\nVC+\n${target.user.tag} was disconnected.\n\`\`\``
+            );
+
+        } catch (error) {
+            console.error(
+                "[VC DISCONNECT]",
+                error
+            );
+
+            return safeReply(
+                message,
+                "```VC+\nFailed to disconnect that user.\n```"
+            );
+        }
+    }
+
+
+    // ========================================================
+    // VC BAN
+    // ========================================================
+
+    if (sub === "ban") {
+        if (!canControlVC(member, channel)) {
+            return deny(message);
+        }
+
+        const target =
+            message.mentions.members.first();
+
+        if (!target) {
+            return usage(
+                message,
+                "-vc ban @user"
+            );
+        }
+
+        if (!guildConfig.voice.banned[channel.id]) {
+            guildConfig.voice.banned[channel.id] = [];
+        }
+
+        if (
+            !guildConfig.voice.banned[channel.id]
+                .includes(target.id)
+        ) {
+            guildConfig.voice.banned[channel.id]
+                .push(target.id);
+        }
+
+        if (
+            target.voice.channelId ===
+            channel.id
+        ) {
+            try {
+                await target.voice.disconnect();
+            } catch {}
+        }
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\n${target.user.tag} was banned from this VC.\n\`\`\``
+        );
+    }
+
+
+    // ========================================================
+    // REJECT
+    // ========================================================
+
+    if (sub === "reject") {
+        if (!canControlVC(member, channel)) {
+            return deny(message);
+        }
+
+        const target =
+            message.mentions.members.first();
+
+        if (!target) {
+            return usage(
+                message,
+                "-vc reject @user"
+            );
+        }
+
+        if (!guildConfig.voice.banned[channel.id]) {
+            guildConfig.voice.banned[channel.id] = [];
+        }
+
+        if (
+            !guildConfig.voice.banned[channel.id]
+                .includes(target.id)
+        ) {
+            guildConfig.voice.banned[channel.id]
+                .push(target.id);
+        }
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\n${target.user.tag} is rejected from this VC.\n\`\`\``
+        );
+    }
+
+
+    // ========================================================
+    // PERMIT
+    // ========================================================
+
+    if (sub === "permit") {
+        if (!canControlVC(member, channel)) {
+            return deny(message);
+        }
+
+        const target =
+            message.mentions.members.first();
+
+        if (!target) {
+            return usage(
+                message,
+                "-vc permit @user"
+            );
+        }
+
+        if (!guildConfig.voice.permitted[channel.id]) {
+            guildConfig.voice.permitted[channel.id] = [];
+        }
+
+        if (
+            !guildConfig.voice.permitted[channel.id]
+                .includes(target.id)
+        ) {
+            guildConfig.voice.permitted[channel.id]
+                .push(target.id);
+        }
+
+        if (guildConfig.voice.banned[channel.id]) {
+            guildConfig.voice.banned[channel.id] =
+                guildConfig.voice.banned[channel.id]
+                    .filter(id => id !== target.id);
+        }
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\n${target.user.tag} was permitted.\n\`\`\``
+        );
+    }
+
+
+    // ========================================================
+    // LOCK
+    // ========================================================
+
+    if (sub === "lock") {
+        if (!canControlVC(member, channel)) {
+            return deny(message);
+        }
+
+        try {
+            await channel.permissionOverwrites.edit(
+                message.guild.roles.everyone,
+                {
+                    Connect: false
+                }
+            );
+
+            guildConfig.voice.locked[channel.id] = true;
+
+            saveJSON(CONFIG_FILE, configs);
+
+            return safeReply(
+                message,
+                "```VC+\nVC locked.\n```"
+            );
+
+        } catch (error) {
+            console.error("[VC LOCK]", error);
+
+            return safeReply(
+                message,
+                "```VC+\nFailed to lock the VC.\n```"
+            );
+        }
+    }
+
+
+    // ========================================================
+    // UNLOCK
+    // ========================================================
+
+    if (sub === "unlock") {
+        if (!canControlVC(member, channel)) {
+            return deny(message);
+        }
+
+        try {
+            await channel.permissionOverwrites.edit(
+                message.guild.roles.everyone,
+                {
+                    Connect: null
+                }
+            );
+
+            guildConfig.voice.locked[channel.id] = false;
+
+            saveJSON(CONFIG_FILE, configs);
+
+            return safeReply(
+                message,
+                "```VC+\nVC unlocked.\n```"
+            );
+
+        } catch (error) {
+            console.error("[VC UNLOCK]", error);
+
+            return safeReply(
+                message,
+                "```VC+\nFailed to unlock the VC.\n```"
+            );
+        }
+    }
+
+
+    // ========================================================
+    // LIMIT
+    // ========================================================
+
+    if (sub === "limit") {
+        if (!canControlVC(member, channel)) {
+            return deny(message);
+        }
+
+        const limit = Number(args[1]);
+
+        if (
+            !Number.isInteger(limit) ||
+            limit < 0 ||
+            limit > 99
+        ) {
+            return usage(
+                message,
+                "-vc limit 0-99"
+            );
+        }
+
+        try {
+            await channel.setUserLimit(limit);
+
+            guildConfig.voice.limits[channel.id] =
+                limit;
+
+            saveJSON(CONFIG_FILE, configs);
+
+            return safeReply(
+                message,
+                `\`\`\`\nVC+\nVC user limit set to ${limit}.\n\`\`\``
+            );
+
+        } catch (error) {
+            console.error("[VC LIMIT]", error);
+
+            return safeReply(
+                message,
+                "```VC+\nFailed to change the VC limit.\n```"
+            );
+        }
+    }
+
+
+    // ========================================================
+    // RENAME
+    // ========================================================
+
+    if (sub === "rename") {
+        if (!canControlVC(member, channel)) {
+            return deny(message);
+        }
+
+        const name =
+            args.slice(1).join(" ");
+
+        if (!name) {
+            return usage(
+                message,
+                "-vc rename name"
+            );
+        }
+
+        try {
+            await channel.setName(
+                name.slice(0, 100)
+            );
+
+            return safeReply(
+                message,
+                `\`\`\`\nVC+\nVC renamed to ${name}.\n\`\`\``
+            );
+
+        } catch (error) {
+            console.error("[VC RENAME]", error);
+
+            return safeReply(
+                message,
+                "```VC+\nFailed to rename the VC.\n```"
+            );
+        }
+    }
+
+
+    // ========================================================
+    // TRANSFER
+    // ========================================================
+
+    if (sub === "transfer") {
+        if (!canControlVC(member, channel)) {
+            return deny(message);
+        }
+
+        const target =
+            message.mentions.members.first();
+
+        if (!target) {
+            return usage(
+                message,
+                "-vc transfer @user"
+            );
+        }
+
+        guildConfig.voice.owners[channel.id] =
+            target.id;
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            `\`\`\`\nVC+\nVC ownership transferred to ${target.user.tag}.\n\`\`\``
+        );
+    }
+
+
+    // ========================================================
+    // CLAIM
+    // ========================================================
+
+    if (sub === "claim") {
+
+        const ownerId =
+            guildConfig.voice.owners[channel.id];
+
+        if (ownerId) {
+            const owner =
+                channel.guild.members.cache.get(
+                    ownerId
+                );
+
+            if (owner && owner.voice.channelId === channel.id) {
+                return safeReply(
+                    message,
+                    "```VC+\nThis VC already has an active owner.\n```"
+                );
+            }
+        }
+
+        guildConfig.voice.owners[channel.id] =
+            message.author.id;
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            "```VC+\nYou claimed this VC.\n```"
+        );
+    }
+
+
+    // ========================================================
+    // FORCECLAIM
+    // ========================================================
+
+    if (sub === "forceclaim") {
+        if (!hasGodAccess(member)) {
+            return deny(message);
+        }
+
+        guildConfig.voice.owners[channel.id] =
+            message.author.id;
+
+        saveJSON(CONFIG_FILE, configs);
+
+        return safeReply(
+            message,
+            "```VC+\nYou force claimed this VC.\n```"
+        );
+    }
+
+
+    // ========================================================
+    // STFU
+    // ========================================================
+
+    if (sub === "stfu") {
+
+        if (!hasGodAccess(member)) {
+            return deny(message);
+        }
+
+        const target =
+            message.mentions.members.first();
+
+        if (!target) {
+            return usage(
+                message,
+                "-vc stfu @user"
+            );
+        }
+
+        try {
+            await target.voice.setMute(
+                true,
+                `VC+ STFU by ${message.author.tag}`
+            );
+
+            return safeReply(
+                message,
+                `\`\`\`\nVC+\n${target.user.tag} has been server muted.\n\`\`\``
+            );
+
+        } catch (error) {
+            console.error("[STFU]", error);
+
+            return safeReply(
+                message,
+                "```VC+\nFailed to server mute that user.\n```"
+            );
+        }
+    }
+
+
+    // ========================================================
+    // UNSTFU
+    // ========================================================
+
+    if (sub === "unstfu") {
+
+        if (!hasGodAccess(member)) {
+            return deny(message);
+        }
+
+        const target =
+            message.mentions.members.first();
+
+        if (!target) {
+            return usage(
+                message,
+                "-vc unstfu @user"
+            );
+        }
+
+        try {
+            await target.voice.setMute(
+                false,
+                `VC+ UNSTFU by ${message.author.tag}`
+            );
+
+            return safeReply(
+                message,
+                `\`\`\`\nVC+\n${target.user.tag} is no longer server muted.\n\`\`\``
+            );
+
+        } catch (error) {
+            console.error("[UNSTFU]", error);
+
+            return safeReply(
+                message,
+                "```VC+\nFailed to remove the server mute.\n```"
+            );
+        }
+    }
+
+
+    return safeReply(
+        message,
+        "```VC+\nUnknown VC command.\nUse -help voice\n```"
+    );
+}
+
+
+// ============================================================
+// JOIN TO CREATE
+// ============================================================
+
+async function handleJoinToCreate(oldState, newState) {
+
+    if (!newState.guild) return;
+
+    const guildConfig =
+        getGuildConfig(newState.guild.id);
+
+    if (
+        !guildConfig.joinToCreate ||
+        newState.channelId !==
+        guildConfig.joinToCreate
+    ) {
+        return;
+    }
+
+    const member = newState.member;
+
+    if (!member) return;
+
+    try {
+        const category =
+            newState.channel.parent;
+
+        const channel =
+            await newState.guild.channels.create({
+                name: `${member.user.username}'s VC`,
+                type: ChannelType.GuildVoice,
+                parent: category?.id || null,
+
+                permissionOverwrites: [
+                    {
+                        id: newState.guild.roles.everyone.id,
+                        allow: [
+                            PermissionsBitField.Flags.Connect
+                        ]
+                    }
+                ]
+            });
+
+        guildConfig.temporaryChannels.push(
+            channel.id
+        );
+
+        guildConfig.voice.owners[channel.id] =
+            member.id;
+
+        saveJSON(CONFIG_FILE, configs);
+
+        await member.voice.setChannel(channel);
+
+    } catch (error) {
+        console.error(
+            "[JOIN TO CREATE ERROR]",
+            error
+        );
+    }
+}
+
+
+// ============================================================
+// CLEAN EMPTY TEMP VCS
+// ============================================================
+
+async function cleanupVoiceChannel(channel) {
+    if (!channel?.guild) return;
+
+    const guildConfig =
+        getGuildConfig(channel.guild.id);
+
+    if (
+        !guildConfig.temporaryChannels
+            .includes(channel.id)
+    ) {
+        return;
+    }
+
+    if (channel.members.size > 0) {
+        return;
+    }
+
+    try {
+        await channel.delete(
+            "VC+ temporary VC cleanup"
+        );
+    } catch (error) {
+        console.error(
+            "[VC CLEANUP]",
+            error
+        );
+    }
+
+    guildConfig.temporaryChannels =
+        guildConfig.temporaryChannels
+            .filter(id => id !== channel.id);
+
+    delete guildConfig.voice.owners[channel.id];
+    delete guildConfig.voice.banned[channel.id];
+    delete guildConfig.voice.permitted[channel.id];
+    delete guildConfig.voice.locked[channel.id];
+    delete guildConfig.voice.limits[channel.id];
+
+    saveJSON(CONFIG_FILE, configs);
+}
+
+
+// ============================================================
+// FILTER MESSAGE
+// ============================================================
+
+async function checkFilter(message) {
+    if (!message.guild) return;
+    if (message.author.bot) return;
+
+    const guildConfig =
+        getGuildConfig(message.guild.id);
+
+    if (!guildConfig.filter.length) return;
+
+    const content =
+        message.content.toLowerCase();
+
+    const matched =
+        guildConfig.filter.find(
+            word => content.includes(word)
+        );
+
+    if (!matched) return;
+
+    // Staff and above bypass filter.
+    if (
+        message.member &&
+        getRankLevel(message.member) >=
+        RANKS.staff
+    ) {
+        return;
+    }
+
+    try {
+        if (message.deletable) {
+            await message.delete();
+        }
+    } catch {}
+
+    await safeReply(
+        message,
+        "```VC+\nThat message was removed by the server filter.\n```"
+    );
+}
+
+
+// ============================================================
+// ANTI-NUKE
+// ============================================================
+
+function dangerousPermissionChange(change) {
+    const permissions = change?.permissions;
+
+    if (!permissions) return false;
+
+    return (
+        permissions.has(
+            PermissionsBitField.Flags.Administrator
+        ) ||
+        permissions.has(
+            PermissionsBitField.Flags.ManageGuild
+        ) ||
+        permissions.has(
+            PermissionsBitField.Flags.ManageRoles
+        ) ||
+        permissions.has(
+            PermissionsBitField.Flags.ManageChannels
+        ) ||
+        permissions.has(
+            PermissionsBitField.Flags.BanMembers
+        ) ||
+        permissions.has(
+            PermissionsBitField.Flags.KickMembers
+        )
+    );
+}
+
+
+function isTrustedExecutor(guild, userId) {
+    if (guild.ownerId === userId) {
         return true;
     }
 
-    cooldowns.set(key, now);
+    const member =
+        guild.members.cache.get(userId);
 
-    return false;
+    if (!member) return false;
+
+    return hasGodAccess(member);
 }
 
-// Clean old cooldowns periodically.
-setInterval(() => {
-    const now = Date.now();
 
-    for (const [key, timestamp] of cooldowns) {
-        if (now - timestamp > 60000) {
-            cooldowns.delete(key);
-        }
-    }
-}, 60000).unref();
-
-// ============================================================
-// MESSAGE HANDLER
-// ============================================================
-
-client.on("messageCreate", async message => {
+async function getAuditExecutor(
+    guild,
+    type
+) {
     try {
-        // Never process bots.
-        if (!message) return;
-        if (message.author?.bot) return;
+        const logs =
+            await guild.fetchAuditLogs({
+                type,
+                limit: 1
+            });
 
-        // Only guild messages.
-        if (!message.guild) return;
+        const entry =
+            logs.entries.first();
 
-        const PREFIX = "-";
+        if (!entry) return null;
 
-        if (!message.content?.startsWith(PREFIX)) {
-            return;
-        }
-
-        const input = message.content
-            .slice(PREFIX.length)
-            .trim();
-
-        if (!input) return;
-
-        const parts = input.split(/\s+/);
-
-        const command = parts
-            .shift()
-            ?.toLowerCase();
-
-        if (!command) return;
-
-        // Prevent accidental command spam.
-        if (
-            isOnCooldown(
-                message.author.id,
-                command
-            )
-        ) {
-            return;
-        }
-
-        // ====================================================
-        // COMMAND ROUTER
-        // ====================================================
-
-        switch (command) {
-
-            case "help":
-                await safeExecute(
-                    () => handleHelp(message, parts),
-                    "help command"
-                );
-                break;
-
-            case "ping":
-                await safeExecute(
-                    () => handlePing(message),
-                    "ping command"
-                );
-                break;
-
-            case "ban":
-                await safeExecute(
-                    () => handleBan(message, parts),
-                    "ban command"
-                );
-                break;
-
-            case "unban":
-                await safeExecute(
-                    () => handleUnban(message, parts),
-                    "unban command"
-                );
-                break;
-
-            case "unbanall":
-                await safeExecute(
-                    () => handleUnbanAll(message),
-                    "unbanall command"
-                );
-                break;
-
-            case "kick":
-                await safeExecute(
-                    () => handleKick(message, parts),
-                    "kick command"
-                );
-                break;
-
-            case "timeout":
-                await safeExecute(
-                    () => handleTimeout(message, parts),
-                    "timeout command"
-                );
-                break;
-
-            case "untimeout":
-                await safeExecute(
-                    () => handleUntimeout(message),
-                    "untimeout command"
-                );
-                break;
-
-            case "purge":
-            case "clear":
-                await safeExecute(
-                    () => handlePurge(message, parts),
-                    "purge command"
-                );
-                break;
-
-            case "rank":
-                await safeExecute(
-                    () => handleRank(message, parts),
-                    "rank command"
-                );
-                break;
-
-            case "ranklist":
-                await safeExecute(
-                    () => handleRankList(message),
-                    "ranklist command"
-                );
-                break;
-
-            case "godmode":
-                await safeExecute(
-                    () => handleGodmode(message, parts),
-                    "godmode command"
-                );
-                break;
-
-            case "vouch":
-            case "vouches":
-                await safeExecute(
-                    () => handleVouch(message, parts),
-                    "vouch command"
-                );
-                break;
-
-            case "filter":
-                await safeExecute(
-                    () => handleFilter(message, parts),
-                    "filter command"
-                );
-                break;
-
-            case "vc":
-                await safeExecute(
-                    () => handleVC(message, parts),
-                    "vc command"
-                );
-                break;
-
-            case "interface":
-                await safeExecute(
-                    () => handleInterface(message),
-                    "interface command"
-                );
-                break;
-
-            default:
-                await safeReply(message, {
-                    embeds: [
-                        {
-                            title: "VC+  •  Error",
-                            description:
-                                `Unknown command: \`${PREFIX}${command}\`\n\nUse \`${PREFIX}help\` to see all commands.`,
-                            color: 0x111111
-                        }
-                    ]
-                });
-        }
-
+        return entry.executor;
     } catch (error) {
         console.error(
-            "[VC+] Message handler crashed:",
+            "[AUDIT LOG ERROR]",
             error
         );
 
-        await safeReply(message, {
-            embeds: [
-                {
-                    title: "VC+  •  Error",
-                    description:
-                        "Something went wrong while processing that command.",
-                    color: 0x111111
-                }
-            ]
-        });
+        return null;
     }
-});
+}
+
 
 // ============================================================
-// BUTTON HANDLER
+// ROLE CREATE PROTECTION
 // ============================================================
 
-client.on("interactionCreate", async interaction => {
-    try {
-        if (!interaction.isButton()) {
-            return;
-        }
+client.on(
+    "roleCreate",
+    async role => {
 
-        if (
-            !interaction.customId.startsWith(
-                "vc_help_"
-            )
-        ) {
-            return;
-        }
+        try {
+            const executor =
+                await getAuditExecutor(
+                    role.guild,
+                    AuditLogEvent.RoleCreate
+                );
 
-        await safeExecute(
-            async () => {
-                // Put your help-page button logic here.
-                await handleHelpButtons(interaction);
-            },
-            "help button"
-        );
+            if (!executor) return;
 
-    } catch (error) {
-        console.error(
-            "[VC+] Interaction handler crashed:",
-            error
-        );
-
-        await safeInteractionReply(
-            interaction,
-            {
-                embeds: [
-                    {
-                        title: "VC+  •  Error",
-                        description:
-                            "This interaction could not be completed.",
-                        color: 0x111111
-                    }
-                ],
-                ephemeral: true
+            if (
+                isTrustedExecutor(
+                    role.guild,
+                    executor.id
+                )
+            ) {
+                return;
             }
-        );
+
+            if (
+                role.permissions.has(
+                    PermissionsBitField.Flags.Administrator
+                ) ||
+                dangerousPermissionChange(role)
+            ) {
+                try {
+                    await role.delete(
+                        "VC+ anti-nuke"
+                    );
+                } catch {}
+
+                const attacker =
+                    role.guild.members.cache.get(
+                        executor.id
+                    );
+
+                if (
+                    attacker &&
+                    attacker.bannable
+                ) {
+                    try {
+                        await attacker.ban({
+                            reason:
+                                "VC+ anti-nuke: unauthorized dangerous role creation"
+                        });
+                    } catch {}
+                }
+
+                return;
+            }
+
+        } catch (error) {
+            console.error(
+                "[ROLE CREATE PROTECTION]",
+                error
+            );
+        }
     }
-});
+);
+
 
 // ============================================================
-// VOICE STATE HANDLER
+// ROLE DELETE PROTECTION
 // ============================================================
 
-client.on("voiceStateUpdate", async (oldState, newState) => {
-    try {
-        if (!newState?.guild) return;
+client.on(
+    "roleDelete",
+    async role => {
 
-        await safeExecute(
-            async () => {
-                await handleVoiceState(
-                    oldState,
-                    newState
+        try {
+            const executor =
+                await getAuditExecutor(
+                    role.guild,
+                    AuditLogEvent.RoleDelete
                 );
-            },
-            "voice state update"
-        );
 
-    } catch (error) {
-        console.error(
-            "[VC+] Voice handler crashed:",
-            error
-        );
+            if (!executor) return;
+
+            if (
+                isTrustedExecutor(
+                    role.guild,
+                    executor.id
+                )
+            ) {
+                return;
+            }
+
+            const attacker =
+                role.guild.members.cache.get(
+                    executor.id
+                );
+
+            if (
+                attacker &&
+                attacker.bannable
+            ) {
+                await attacker.ban({
+                    reason:
+                        "VC+ anti-nuke: unauthorized role deletion"
+                }).catch(() => {});
+            }
+
+        } catch (error) {
+            console.error(
+                "[ROLE DELETE PROTECTION]",
+                error
+            );
+        }
     }
-});
+);
+
 
 // ============================================================
-// MEMBER JOIN HANDLER
+// MEMBER UPDATE / DANGEROUS ROLE ASSIGNMENT
 // ============================================================
 
-client.on("guildMemberAdd", async member => {
-    try {
-        if (!member?.guild) return;
+client.on(
+    "guildMemberUpdate",
+    async (oldMember, newMember) => {
 
-        await safeExecute(
-            async () => {
-                await handleMemberJoin(member);
-            },
-            "member join"
-        );
+        try {
 
-    } catch (error) {
-        console.error(
-            "[VC+] Member join handler crashed:",
-            error
-        );
+            const oldRoles =
+                new Set(oldMember.roles.cache.keys());
+
+            const newRoles =
+                [...newMember.roles.cache.values()]
+                    .filter(role => !oldRoles.has(role.id));
+
+            if (!newRoles.length) {
+                return;
+            }
+
+            const executor =
+                await getAuditExecutor(
+                    newMember.guild,
+                    AuditLogEvent.MemberRoleUpdate
+                );
+
+            if (!executor) return;
+
+            if (
+                isTrustedExecutor(
+                    newMember.guild,
+                    executor.id
+                )
+            ) {
+                return;
+            }
+
+            const dangerous =
+                newRoles.some(role =>
+                    dangerousPermissionChange(role)
+                );
+
+            if (!dangerous) return;
+
+            const attacker =
+                newMember.guild.members.cache.get(
+                    executor.id
+                );
+
+            if (
+                attacker &&
+                attacker.bannable
+            ) {
+                await attacker.ban({
+                    reason:
+                        "VC+ anti-nuke: unauthorized dangerous role assignment"
+                }).catch(() => {});
+            }
+
+            for (const role of newRoles) {
+                if (newMember.roles.cache.has(role.id)) {
+                    await newMember.roles.remove(
+                        role,
+                        "VC+ anti-nuke"
+                    ).catch(() => {});
+                }
+            }
+
+        } catch (error) {
+            console.error(
+                "[MEMBER ROLE PROTECTION]",
+                error
+            );
+        }
     }
-});
+);
+
+
+// ============================================================
+// MESSAGE COMMAND ROUTER
+// ============================================================
+
+client.on(
+    "messageCreate",
+    async message => {
+
+        try {
+
+            if (message.author.bot) {
+                return;
+            }
+
+            if (!message.guild) {
+                return;
+            }
+
+            // Filter runs before commands.
+            await checkFilter(message);
+
+            if (message.deleted) {
+                return;
+            }
+
+            if (
+                !message.content.startsWith(PREFIX)
+            ) {
+                return;
+            }
+
+            const parts =
+                message.content
+                    .slice(PREFIX.length)
+                    .trim()
+                    .split(/\s+/);
+
+            const command =
+                parts.shift()?.toLowerCase();
+
+            const args = parts;
+
+            if (!command) {
+                return;
+            }
+
+
+            // =================================================
+            // COMMAND ROUTER
+            // =================================================
+
+            switch (command) {
+
+                case "help":
+                    await handleHelp(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "ping":
+                    await handlePing(
+                        message
+                    );
+                    break;
+
+
+                // MODERATION
+
+                case "ban":
+                    await handleBan(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "unban":
+                    await handleUnban(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "unbanall":
+                    await handleUnbanAll(
+                        message
+                    );
+                    break;
+
+                case "kick":
+                    await handleKick(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "timeout":
+                    await handleTimeout(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "untimeout":
+                    await handleUntimeout(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "foreverban":
+                    await handleForeverBan(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "unforeverban":
+                    await handleUnForeverBan(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "purge":
+                case "clear":
+                    await handlePurge(
+                        message,
+                        args
+                    );
+                    break;
+
+
+                // RANKS
+
+                case "rank":
+                    await handleRank(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "ranklist":
+                    await handleRankList(
+                        message
+                    );
+                    break;
+
+
+                // GODMODE
+
+                case "godmode":
+                    await handleGodmode(
+                        message,
+                        args
+                    );
+                    break;
+
+
+                // VOUCHES
+
+                case "vouch":
+                    await handleVouch(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "vouches":
+                    await handleVouches(
+                        message,
+                        args
+                    );
+                    break;
+
+
+                // FILTER
+
+                case "filter":
+                    await handleFilter(
+                        message,
+                        args
+                    );
+                    break;
+
+
+                // VOICE
+
+                case "vc":
+                    await handleVC(
+                        message,
+                        args
+                    );
+                    break;
+
+                case "interface":
+                    await handleInterface(
+                        message
+                    );
+                    break;
+
+
+                default:
+                    await safeReply(
+                        message,
+                        `\`\`\`\nVC+\nUnknown command: ${PREFIX}${command}\nUse -help to view commands.\n\`\`\``
+                    );
+                    break;
+            }
+
+        } catch (error) {
+
+            console.error(
+                "[MESSAGE COMMAND ERROR]",
+                error
+            );
+
+            await safeReply(
+                message,
+                "```VC+\nAn error occurred while executing that command.\n```"
+            );
+        }
+    }
+);
+
+
+// ============================================================
+// HELP BUTTONS
+// ============================================================
+
+client.on(
+    "interactionCreate",
+    async interaction => {
+
+        try {
+
+            if (!interaction.isButton()) {
+                return;
+            }
+
+            if (
+                !interaction.customId.startsWith(
+                    "help_"
+                )
+            ) {
+                return;
+            }
+
+            const currentMatch =
+                interaction.message
+                    .components?.[0]
+                    ?.components?.[1]
+                    ?.customId
+                    ?.match(/help_page_(\d+)/);
+
+            let page =
+                currentMatch
+                    ? Number(currentMatch[1])
+                    : 0;
+
+            if (
+                interaction.customId ===
+                "help_prev"
+            ) {
+                page--;
+
+                if (page < 0) {
+                    page =
+                        HELP_PAGES.length - 1;
+                }
+            }
+
+            if (
+                interaction.customId ===
+                "help_next"
+            ) {
+                page++;
+
+                if (
+                    page >=
+                    HELP_PAGES.length
+                ) {
+                    page = 0;
+                }
+            }
+
+            await interaction.update(
+                helpPayload(page)
+            );
+
+        } catch (error) {
+            console.error(
+                "[BUTTON ERROR]",
+                error
+            );
+
+            try {
+                if (!interaction.replied) {
+                    await interaction.reply({
+                        content:
+                            "VC+ encountered an error.",
+                        ephemeral: true
+                    });
+                }
+            } catch {}
+        }
+    }
+);
+
+
+// ============================================================
+// VOICE STATE
+// ============================================================
+
+client.on(
+    "voiceStateUpdate",
+    async (oldState, newState) => {
+
+        try {
+
+            // Join To Create.
+            await handleJoinToCreate(
+                oldState,
+                newState
+            );
+
+            // Delete old temporary VC if empty.
+            if (
+                oldState.channel &&
+                oldState.channelId !==
+                newState.channelId
+            ) {
+                await cleanupVoiceChannel(
+                    oldState.channel
+                );
+            }
+
+            // =================================================
+            // VC BAN / REJECT ENFORCEMENT
+            // =================================================
+
+            if (
+                newState.channel
+            ) {
+
+                const guildConfig =
+                    getGuildConfig(
+                        newState.guild.id
+                    );
+
+                const channelId =
+                    newState.channel.id;
+
+                const banned =
+                    guildConfig.voice.banned[channelId]
+                    || [];
+
+                if (
+                    banned.includes(
+                        newState.member.id
+                    )
+                ) {
+                    try {
+                        await newState.member.voice
+                            .disconnect(
+                                "VC+ VC ban enforcement"
+                            );
+                    } catch {}
+                }
+            }
+
+        } catch (error) {
+
+            console.error(
+                "[VOICE STATE ERROR]",
+                error
+            );
+        }
+    }
+);
+
+
+// ============================================================
+// FOREVER BAN JOIN PROTECTION
+// ============================================================
+
+client.on(
+    "guildMemberAdd",
+    async member => {
+
+        try {
+
+            const guildBans =
+                foreverBans[member.guild.id];
+
+            if (!guildBans) {
+                return;
+            }
+
+            if (!guildBans[member.id]) {
+                return;
+            }
+
+            try {
+                await member.ban({
+                    reason:
+                        "VC+ forever-ban enforcement"
+                });
+            } catch {}
+
+        } catch (error) {
+            console.error(
+                "[FOREVER BAN JOIN]",
+                error
+            );
+        }
+    }
+);
+
 
 // ============================================================
 // READY
 // ============================================================
 
-client.once("ready", () => {
-    console.log(
-        `[VC+] Logged in as ${client.user.tag}`
-    );
+client.once(
+    "ready",
+    () => {
 
-    try {
+        console.log(
+            `VC+ online as ${client.user.tag}`
+        );
+
         client.user.setPresence({
             activities: [
                 {
-                    name: "-help",
-                    type: 0
+                    name: "-help"
                 }
             ],
             status: "online"
         });
-    } catch (error) {
+    }
+);
+
+
+// ============================================================
+// CLIENT ERROR PROTECTION
+// ============================================================
+
+client.on(
+    "error",
+    error => {
         console.error(
-            "[VC+] Presence error:",
+            "[CLIENT ERROR]",
             error
         );
     }
-});
+);
+
+
+client.on(
+    "warn",
+    warning => {
+        console.warn(
+            "[CLIENT WARNING]",
+            warning
+        );
+    }
+);
+
+
+client.on(
+    "shardError",
+    error => {
+        console.error(
+            "[SHARD ERROR]",
+            error
+        );
+    }
+);
+
 
 // ============================================================
-// RECONNECT WATCHDOG
+// PROCESS ERROR PROTECTION
 // ============================================================
 
-let lastReady = Date.now();
+process.on(
+    "unhandledRejection",
+    error => {
+        console.error(
+            "[UNHANDLED REJECTION]",
+            error
+        );
+    }
+);
 
-client.on("ready", () => {
-    lastReady = Date.now();
-});
 
-setInterval(() => {
+process.on(
+    "uncaughtException",
+    error => {
+        console.error(
+            "[UNCAUGHT EXCEPTION]",
+            error
+        );
+    }
+);
+
+
+process.on(
+    "warning",
+    warning => {
+        console.warn(
+            "[NODE WARNING]",
+            warning
+        );
+    }
+);
+
+
+// ============================================================
+// SHUTDOWN
+// ============================================================
+
+async function shutdown(signal) {
+
+    console.log(
+        `VC+ received ${signal}. Shutting down safely.`
+    );
+
     try {
-        if (!client.isReady()) {
-            console.warn(
-                "[VC+] Client is not ready. Discord.js will handle reconnection."
-            );
-            return;
-        }
+        client.destroy();
+    } catch {}
 
-        const seconds =
-            Math.floor(
-                (Date.now() - lastReady) / 1000
-            );
+    process.exit(0);
+}
 
-        if (seconds > 3600) {
-            console.log(
-                "[VC+] Bot has remained connected for over an hour."
-            );
-        }
 
-    } catch (error) {
-        console.error(
-            "[VC+] Watchdog error:",
-            error
-        );
-    }
-}, 60000).unref();
+process.on(
+    "SIGINT",
+    () => shutdown("SIGINT")
+);
+
+process.on(
+    "SIGTERM",
+    () => shutdown("SIGTERM")
+);
+
 
 // ============================================================
-// LOGIN
+// START BOT
 // ============================================================
 
 async function startBot() {
-    try {
-        console.log("[VC+] Starting...");
 
-        await client.login(TOKEN);
+    const token =
+        process.env.DISCORD_TOKEN;
+
+    if (!token) {
+        console.error(
+            "Missing DISCORD_TOKEN in .env"
+        );
+
+        process.exit(1);
+    }
+
+    try {
+
+        await client.login(token);
 
     } catch (error) {
+
         console.error(
-            "[VC+] Login failed:",
+            "[LOGIN ERROR]",
             error
         );
 
-        // Login failure should not cause an endless crash loop.
-        process.exitCode = 1;
+        process.exit(1);
     }
 }
 
+
 startBot();
-
-// ============================================================
-// PLACEHOLDER HANDLERS
-// ============================================================
-//
-// Keep your existing VC+ command implementations inside these
-// functions. The router above makes sure one broken command does
-// not take down the entire bot.
-//
-
-async function handleHelp(message, args) {
-    // Existing -help code
-}
-
-async function handlePing(message) {
-    await safeReply(message, {
-        embeds: [
-            {
-                title: "VC+  •  Ping",
-                description:
-                    `Latency: **${client.ws.ping}ms**`,
-                color: 0x111111
-            }
-        ]
-    });
-}
-
-async function handleBan(message, args) {
-    // Existing -ban code
-}
-
-async function handleUnban(message, args) {
-    // Existing -unban code
-}
-
-async function handleUnbanAll(message) {
-    // Existing -unbanall code
-}
-
-async function handleKick(message, args) {
-    // Existing -kick code
-}
-
-async function handleTimeout(message, args) {
-    // Existing -timeout code
-}
-
-async function handleUntimeout(message) {
-    // Existing -untimeout code
-}
-
-async function handlePurge(message, args) {
-    // Existing -purge / -clear code
-}
-
-async function handleRank(message, args) {
-    // Existing rank system
-}
-
-async function handleRankList(message) {
-    // Existing ranklist
-}
-
-async function handleGodmode(message, args) {
-    // Existing godmode
-}
-
-async function handleVouch(message, args) {
-    // Existing vouch system
-}
-
-async function handleFilter(message, args) {
-    // Existing filter system
-}
-
-async function handleVC(message, args) {
-    // Existing VC system
-}
-
-async function handleInterface(message) {
-    // Existing interface system
-}
-
-async function handleHelpButtons(interaction) {
-    // Existing paginated help buttons
-}
-
-async function handleVoiceState(oldState, newState) {
-    // Existing Join-To-Create system
-}
-
-async function handleMemberJoin(member) {
-    // Existing forever-ban enforcement
-}
