@@ -8,8 +8,7 @@ import {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
-    ChannelType,
-    AuditLogEvent
+    ChannelType
 } from "discord.js";
 import fs from "node:fs";
 import path from "node:path";
@@ -100,12 +99,6 @@ function getGuildConfig(guildId) {
     c.vouches ??= {};
     c.godmode ??= [];
     c.filter ??= [];
-    c.security ??= {};
-    c.security.enabled ??= true;
-    c.security.whitelist ??= [];
-    c.security.maxActions ??= 3;
-    c.security.windowMs ??= 10000;
-    c.security.actions ??= {};
     c.voice ??= {};
     c.voice.owners ??= {};
     c.voice.banned ??= {};
@@ -127,12 +120,12 @@ function usage(message, text) { return reply(message, `\`\`\`VC+\nUsage: ${text}
 
 const HELP_PAGES = [
     { name: "General", description: `-help\nOpen the VC+ help menu.\n\n-ping\nCheck bot latency.` },
-    { name: "Moderation", description: `-ban @user [reason]\nBan a member.\n\n-unban USER_ID\nUnban a user.\n\n-unbanall\nUnban all users.\n\n-kick @user [reason]\nKick a member.\n\n-timeout @user 10m [reason]\nTimeout a member.\n\n-untimeout @user\nRemove a timeout.\n\n-foreverban @user [reason]\nForever ban a member through VC+.\n\n-unforeverban USER_ID\nRemove a VC+ forever ban.\n\n-purge 1-100\nDelete messages.\n\n-clear 1-100\nAlias for purge.` },
+    { name: "Moderation", description: `-ban @user [reason]\nServer owner only. Ban a member, DM the user, and confirm in the server.\n\n-unban USER_ID\nUnban a user.\n\n-unbanall\nUnban all users.\n\n-kick @user [reason]\nKick a member.\n\n-timeout @user 10m [reason]\nTimeout a member.\n\n-untimeout @user\nRemove a timeout.\n\n-foreverban @user [reason]\nForever ban a member through VC+.\n\n-unforeverban USER_ID\nRemove a VC+ forever ban.\n\n-purge 1-100\nDelete messages.\n\n-clear 1-100\nAlias for purge.` },
     { name: "Ranks", description: `-rank @user <rank>\nSet a VC+ rank.\n\n-rank @user\nView a user's rank.\n\n-ranklist\nView rank hierarchy.\n\n-removerank @user\nServer owner only. Remove a user's VC+ rank and return them to Member.` },
     { name: "Godmode", description: `-godmode @user\nGive internal Godmode.\n\n-godmode remove @user\nRemove internal Godmode.` },
     { name: "Vouches", description: `-vouch set role @Role\nSet the vouch role.\n\n-vouch role\nView the vouch role.\n\n-vouch give @user reason\nGive a vouch and assign the role.\n\n-vouch clear @user\nClear a user's vouches and remove the role.\n\n-vouch clear everyone\nClear everyone's vouches and remove the role from everyone.\n\n-vouch list\nView vouches.\n\n-vouches @user\nView a user's vouches.` },
     { name: "Filter", description: `-filter add word\nAdd a filtered word.\n\n-filter remove word\nRemove a filtered word.` },
-    { name: "Voice", description: `-vc setup\nCreate Join-to-Create.\n\n-vc kick @user\nDisconnect a user.\n\n-vc disconnect @user\nDisconnect a user.\n\n-vc ban @user\nBan a user from the VC.\n\n-vc reject @user\nReject a user.\n\n-vc permit @user\nPermit a user.\n\n-vc lock\nLock the VC.\n\n-vc unlock\nUnlock the VC.\n\n-vc limit number\nSet the user limit.\n\n-vc rename name\nRename the VC.\n\n-vc transfer @user\nTransfer ownership.\n\n-vc claim\nClaim an abandoned VC.\n\n-vc forceclaim\nForce claim a VC.\n\n-vc stfu @user\nServer mute a user.\n\n-vc unstfu @user\nRemove server mute.` },
+    { name: "Voice", description: `-vc setup\nServer owner only. Create Join-to-Create.\n\n-vc kick @user\nDisconnect a user.\n\n-vc disconnect @user\nDisconnect a user.\n\n-vc ban @user\nBan a user from the VC.\n\n-vc reject @user\nReject a user.\n\n-vc permit @user\nPermit a user.\n\n-vc lock\nLock the VC.\n\n-vc unlock\nUnlock the VC.\n\n-vc limit number\nSet the user limit.\n\n-vc rename name\nRename the VC.\n\n-vc transfer @user\nTransfer ownership.\n\n-vc claim\nClaim an abandoned VC.\n\n-vc forceclaim\nForce claim a VC.\n\n-vc stfu @user\nFounder and God only. Server mute a user.\n\n-vc unstfu @user\nFounder and God only. Remove server mute.` },
     { name: "Server Setup", description: `-vc setup\nCreate the Join-to-Create system.\n\n-interface\nCreate the VC+ server interface.\n\n-vouch set role @Role\nConfigure the vouch role.` }
 ];
 
@@ -281,7 +274,15 @@ async function handleModeration(message, command, args) {
     const target = message.mentions.members.first();
     if (["ban", "kick", "timeout", "untimeout", "foreverban"].includes(command) && !target) return usage(message, `-${command} @user`);
     try {
-        if (command === "ban") { if (!target.bannable) return reply(message, "```VC+\nI cannot ban that member.\n``` "); await target.ban({ reason: args.slice(1).join(" ") || "VC+ moderation" }); return reply(message, panel("Ban", `${target.user.tag} was banned.`)); }
+        if (command === "ban") {
+    if (message.guild.ownerId !== message.author.id) return deny(message);
+    if (target.id === message.guild.ownerId) return reply(message, panel("Ban", "The server owner cannot be banned."));
+    if (!target.bannable) return reply(message, "```VC+\nI cannot ban that member.\n```");
+    const reason = args.slice(1).join(" ") || "No reason provided.";
+    try { await target.send(panel("Ban Notice", `You have been banned from **${message.guild.name}**.\n\nReason: ${reason}\nBanned by: ${message.author.tag}`)); } catch {}
+    await target.ban({ reason: `VC+ owner ban: ${reason}` });
+    return reply(message, panel("Ban", `**${target.user.tag}** was banned.\nReason: ${reason}\nA ban notice was sent by DM.`));
+}
         if (command === "kick") { if (!target.kickable) return reply(message, "```VC+\nI cannot kick that member.\n``` "); await target.kick(args.slice(1).join(" ") || "VC+ moderation"); return reply(message, panel("Kick", `${target.user.tag} was kicked.`)); }
         if (command === "timeout") { const d = parseDuration(args[1]); if (!d) return usage(message, "-timeout @user 10m [reason]"); await target.timeout(d, args.slice(2).join(" ") || "VC+ moderation"); return reply(message, panel("Timeout", `${target.user.tag} was timed out for ${args[1]}.`)); }
         if (command === "untimeout") { await target.timeout(null, "VC+ untimeout"); return reply(message, panel("Timeout", `${target.user.tag} is no longer timed out.`)); }
@@ -311,7 +312,7 @@ async function sendVCPanel(channel, owner) {
 async function handleVC(message, args) {
     const sub = args[0]?.toLowerCase();
     if (sub === "setup") {
-        if (!canManageServer(message.member)) return deny(message);
+        if (message.guild.ownerId !== message.author.id) return deny(message);
         const c = getGuildConfig(message.guild.id);
         if (c.joinToCreate && message.guild.channels.cache.get(c.joinToCreate)) return reply(message, panel("VC Setup", "Join-to-Create is already configured."));
         try {
@@ -327,8 +328,8 @@ async function handleVC(message, args) {
     if (!tempVC(c, channel.id)) return reply(message, "```VC+\nYou must be in a VC+ temporary voice channel.\n``` ");
     if (!controls(message.member, channel)) return deny(message);
     try {
-        if (sub === "kick" || sub === "disconnect") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ voice control"); return reply(message, panel("Voice", `${t.user.tag} was disconnected.`)); }
-        if (sub === "ban" || sub === "reject") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); c.voice.banned[channel.id] ??= []; if (!c.voice.banned[channel.id].includes(t.id)) c.voice.banned[channel.id].push(t.id); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ VC ban").catch(() => {}); saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `${t.user.tag} was ${sub === "ban" ? "banned" : "rejected"}.`)); }
+        if (sub === "kick" || sub === "disconnect") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (isFounder(t)) return reply(message, panel("Voice", "Founder members cannot be kicked or disconnected from VC+ calls.")); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ voice control"); return reply(message, panel("Voice", `${t.user.tag} was disconnected.`)); }
+        if (sub === "ban" || sub === "reject") { const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (isFounder(t)) return reply(message, panel("Voice", "Founder members cannot be VC banned or rejected.")); c.voice.banned[channel.id] ??= []; if (!c.voice.banned[channel.id].includes(t.id)) c.voice.banned[channel.id].push(t.id); if (t.voice.channelId === channel.id) await t.voice.disconnect("VC+ VC ban").catch(() => {}); saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `${t.user.tag} was ${sub === "ban" ? "banned" : "rejected"}.`)); }
         if (sub === "permit") { const t = message.mentions.members.first(); if (!t) return usage(message, "-vc permit @user"); c.voice.permitted[channel.id] ??= []; if (!c.voice.permitted[channel.id].includes(t.id)) c.voice.permitted[channel.id].push(t.id); c.voice.banned[channel.id] = (c.voice.banned[channel.id] || []).filter(id => id !== t.id); saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `${t.user.tag} was permitted.`)); }
         if (sub === "lock" || sub === "unlock") { await channel.permissionOverwrites.edit(message.guild.roles.everyone, { Connect: sub === "lock" ? false : null }); c.voice.locked[channel.id] = sub === "lock"; saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `VC ${sub}ed.`)); }
         if (sub === "limit") { const n = Number(args[1]); if (!Number.isInteger(n) || n < 0 || n > 99) return usage(message, "-vc limit 0-99"); await channel.setUserLimit(n); c.voice.limits[channel.id] = n; saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `User limit set to **${n}**.`)); }
@@ -336,7 +337,7 @@ async function handleVC(message, args) {
         if (sub === "transfer") { const t = message.mentions.members.first(); if (!t) return usage(message, "-vc transfer @user"); c.voice.owners[channel.id] = t.id; saveJSON(CONFIG_FILE, configs); return reply(message, panel("Voice", `Ownership transferred to ${t}.`)); }
         if (sub === "claim") { const owner = c.voice.owners[channel.id]; const m = owner ? message.guild.members.cache.get(owner) : null; if (m?.voice.channelId === channel.id) return reply(message, "```VC+\nThis VC already has an active owner.\n``` "); c.voice.owners[channel.id] = message.author.id; saveJSON(CONFIG_FILE, configs); return reply(message, "```VC+\nYou claimed this VC.\n``` "); }
         if (sub === "forceclaim") { if (!hasGodAccess(message.member)) return deny(message); c.voice.owners[channel.id] = message.author.id; saveJSON(CONFIG_FILE, configs); return reply(message, "```VC+\nYou force claimed this VC.\n``` "); }
-        if (sub === "stfu" || sub === "unstfu") { if (!hasGodAccess(message.member)) return deny(message); const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); await t.voice.setMute(sub === "stfu", `VC+ ${sub}`); return reply(message, panel("Voice", `${t.user.tag} ${sub === "stfu" ? "was server muted" : "is no longer server muted"}.`)); }
+        if (sub === "stfu" || sub === "unstfu") { if (!hasGodAccess(message.member)) return deny(message); const t = message.mentions.members.first(); if (!t) return usage(message, `-vc ${sub} @user`); if (isFounder(t)) return reply(message, panel("Voice", "Founder members cannot be server muted or unmuted through VC+.")); await t.voice.setMute(sub === "stfu", `VC+ ${sub}`); return reply(message, panel("Voice", `${t.user.tag} ${sub === "stfu" ? "was server muted" : "is no longer server muted"}.`)); }
         return usage(message, "-vc setup | kick | disconnect | ban | reject | permit | lock | unlock | limit | rename | transfer | claim | forceclaim | stfu | unstfu");
     } catch (e) { console.error("[VC+ VC COMMAND]", e); return reply(message, "```VC+\nThe VC command could not be completed.\n``` "); }
 }
@@ -463,33 +464,6 @@ client.on("guildMemberAdd", async member => {
     } catch (e) { console.error("[VC+ FOREVER BAN]", e); }
 });
 
-// VC+ SECURITY LAYER
-const securityRate = new Map();
-function securityTrusted(member, config) { return !!member?.user?.bot || member?.guild?.ownerId === member?.id || hasGodAccess(member) || config.security.whitelist.includes(member.id); }
-function securityTrack(guildId, userId, config) { const key=`${guildId}:${userId}`, now=Date.now(); const old=(securityRate.get(key)||[]).filter(t=>now-t<config.security.windowMs); old.push(now); securityRate.set(key,old); return old.length; }
-function securityConfig(guildId) { const c=getGuildConfig(guildId); c.security??={}; c.security.enabled??=true; c.security.whitelist??=[]; c.security.maxActions??=3; c.security.windowMs??=10000; c.security.actions??={}; return c.security; }
-function securityPanelText(guild) { const s=securityConfig(guild.id); return `Status: **${s.enabled ? "ON" : "OFF"}**\\n\\nCommands\\n-security status\\n-security on\\n-security off\\n-security whitelist @user\\n-security unwhitelist @user\\n-security lockdown\\n-security unlock\\n\\nProtected actions: dangerous role/channel changes, webhook creation, and rapid destructive changes by untrusted users.`; }
-async function securityCommand(message,args) { if(!message.member || message.guild.ownerId!==message.author.id) return deny(message); const c=getGuildConfig(message.guild.id),s=securityConfig(message.guild.id),sub=args[0]?.toLowerCase(); if(sub==='status') return reply(message,panel('Security',securityPanelText(message.guild))); if(sub==='on'||sub==='off'){s.enabled=sub==='on';saveJSON(CONFIG_FILE,configs);return reply(message,panel('Security',`Security is now **${s.enabled?'ON':'OFF'}**.`));} if(sub==='whitelist'||sub==='unwhitelist'){const t=message.mentions.members.first();if(!t)return usage(message,`-security ${sub} @user`);if(sub==='whitelist'&&!s.whitelist.includes(t.id))s.whitelist.push(t.id);if(sub==='unwhitelist')s.whitelist=s.whitelist.filter(id=>id!==t.id);saveJSON(CONFIG_FILE,configs);return reply(message,panel('Security',`${t.user.tag} ${sub==='whitelist'?'was added to':'was removed from'} the security whitelist.`));} if(sub==='lockdown'){s.enabled=true;c.voice.lockdown=true;saveJSON(CONFIG_FILE,configs);for(const ch of message.guild.channels.cache.values()){if(ch.type===ChannelType.GuildText||ch.type===ChannelType.GuildAnnouncement||ch.type===ChannelType.GuildVoice)await ch.permissionOverwrites.edit(message.guild.roles.everyone,{SendMessages:ch.isTextBased()?false:undefined,Connect:ch.isVoiceBased()?false:undefined}).catch(()=>{});}return reply(message,panel('Security','Server lockdown enabled.'));} if(sub==='unlock'){c.voice.lockdown=false;saveJSON(CONFIG_FILE,configs);for(const ch of message.guild.channels.cache.values()){if(ch.type===ChannelType.GuildText||ch.type===ChannelType.GuildAnnouncement||ch.type===ChannelType.GuildVoice)await ch.permissionOverwrites.edit(message.guild.roles.everyone,{SendMessages:null,Connect:null}).catch(()=>{});}return reply(message,panel('Security','Server lockdown disabled.'));} return usage(message,'-security status\\n-security on\\n-security off\\n-security whitelist @user\\n-security unwhitelist @user\\n-security lockdown\\n-security unlock'); }
-client.on('messageCreate',async message=>{try{if(!message.guild||message.author.bot||!message.content.startsWith(PREFIX))return;const parts=message.content.slice(PREFIX.length).trim().split(/\\s+/);if(parts.shift()?.toLowerCase()!=='security')return;await securityCommand(message,parts);}catch(e){console.error('[VC+ SECURITY COMMAND]',e);}});
-async function securityAudit(guild,type,object,destructive=false){try{const c=getGuildConfig(guild.id),s=securityConfig(guild.id);if(!s.enabled)return;const logs=await guild.fetchAuditLogs({type,limit:1});const entry=logs.entries.first(),executor=entry?.executor;if(!executor||executor.id===guild.ownerId||executor.bot||executor.id===client.user?.id)return;const member=await guild.members.fetch(executor.id).catch(()=>null);if(!member||member.user?.bot||securityTrusted(member,c))return;const count=securityTrack(guild.id,executor.id,c);if(!destructive&&count<s.maxActions)return;if(object?.delete)await object.delete('VC+ security protection').catch(()=>{});if(member.bannable)await member.ban({reason:'VC+ security protection'}).catch(()=>{});}catch(e){console.error('[VC+ SECURITY AUDIT]',e);}}
-client.on('channelDelete',channel=>securityAudit(channel.guild,AuditLogEvent.ChannelDelete,null,true));
-client.on('roleDelete',role=>securityAudit(role.guild,AuditLogEvent.RoleDelete,null,true));
-client.on('channelCreate',channel=>securityAudit(channel.guild,AuditLogEvent.ChannelCreate,channel,false));
-client.on('webhookUpdate',channel=>securityAudit(channel.guild,AuditLogEvent.WebhookCreate,null,true));
-client.on("roleCreate", async role => {
-    try {
-        const logs = await role.guild.fetchAuditLogs({ type: AuditLogEvent.RoleCreate, limit: 1 });
-        const executor = logs.entries.first()?.executor;
-        if (!executor || executor.id === role.guild.ownerId) return;
-        const member = role.guild.members.cache.get(executor.id);
-        if (!member || hasGodAccess(member)) return;
-        if (role.permissions.has(PermissionsBitField.Flags.Administrator) || role.permissions.has(PermissionsBitField.Flags.ManageGuild) || role.permissions.has(PermissionsBitField.Flags.ManageRoles) || role.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
-            await role.delete("VC+ anti-nuke").catch(() => {});
-            if (member.bannable) await member.ban({ reason: "VC+ anti-nuke" }).catch(() => {});
-        }
-    } catch (e) { console.error("[VC+ ANTI-NUKE]", e); }
-});
-
 client.once("ready", () => {
     console.log(`VC+ online as ${client.user.tag}`);
     client.user.setPresence({ activities: [{ name: "-help" }], status: "online" });
@@ -551,7 +525,7 @@ function vcInterfacePayload() {
     return {
         embeds: [new EmbedBuilder()
             .setTitle("VC+ | Voice Control")
-            .setDescription("Manage your temporary voice channel from this panel.\n\nUse the controls below for locking, members, access, ownership, limits, and channel settings.\n\nCommands: -vc kick, -vc disconnect, -vc ban, -vc reject, -vc permit, -vc lock, -vc unlock, -vc limit, -vc rename, -vc transfer, -vc claim, -vc forceclaim, -vc stfu, -vc unstfu\n\nSecurity: -security status, -security on, -security off, -security whitelist @user, -security unwhitelist @user, -security lockdown, -security unlock")
+            .setDescription("Manage your temporary voice channel from this panel.\n\nUse the controls below for locking, members, access, ownership, limits, and channel settings.\n\nCommands: -vc kick, -vc disconnect, -vc ban, -vc reject, -vc permit, -vc lock, -vc unlock, -vc limit, -vc rename, -vc transfer, -vc claim, -vc forceclaim, -vc stfu, -vc unstfu")
             .setFooter({ text: "VC+ Voice Control" })],
         components: vcInterfaceComponents()
     };
@@ -738,6 +712,7 @@ client.on("interactionCreate", async interaction => {
             }
 
             const target = getUserFromInteraction(interaction);
+            if (isFounder(target) && ["kick", "disconnect", "ban", "reject", "stfu", "unstfu"].includes(modalAction)) return interaction.reply({ ephemeral: true, content: "```VC+\nFounder members are protected from these VC controls.\n```" });
             if (!target) return interaction.reply({ ephemeral: true, content: "```VC+\nMember not found. Use a valid server member ID or @mention.\n```" });
             if (target.id === interaction.user.id && ["kick", "disconnect", "ban", "reject", "stfu"].includes(modalAction)) {
                 return interaction.reply({ ephemeral: true, content: "```VC+\nYou cannot use this control on yourself.\n```" });
