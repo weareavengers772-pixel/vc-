@@ -1,47 +1,44 @@
-name: VC+ Security Update
+name: VC+ Security Cleanup
 on:
   push:
     branches: [main]
 permissions:
   contents: write
 jobs:
-  patch:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Fix security false positives
+      - name: Remove old automatic security layer
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
           p = Path('src/app.js')
           s = p.read_text()
-
-          old = "function securityTrusted(member, config) { return member?.guild?.ownerId === member?.id || hasGodAccess(member) || config.security.whitelist.includes(member.id); }"
-          new = "function securityTrusted(member, config) { return !!member?.user?.bot || member?.guild?.ownerId === member?.id || hasGodAccess(member) || config.security.whitelist.includes(member.id); }"
-          if old in s:
-              s = s.replace(old, new, 1)
-
-          old = "const entry=logs.entries.first(),executor=entry?.executor;if(!executor||executor.id===guild.ownerId)return;"
-          new = "const entry=logs.entries.first(),executor=entry?.executor;if(!executor||executor.id===guild.ownerId||executor.bot||executor.id===client.user?.id)return;"
-          if old in s:
-              s = s.replace(old, new, 1)
-
-          old = "if(!member||securityTrusted(member,c))return;const count=securityTrack"
-          new = "if(!member||member.user?.bot||securityTrusted(member,c))return;const count=securityTrack"
-          if old in s:
-              s = s.replace(old, new, 1)
-
+          s = re.sub(r'\n\s*c\.security \?\?= \{\};\n\s*c\.security\.enabled \?\?= true;\n\s*c\.security\.whitelist \?\?= \[\];\n\s*c\.security\.maxActions \?\?= 3;\n\s*c\.security\.windowMs \?\?= 10000;\n\s*c\.security\.actions \?\?= \{\};', '', s, count=1)
+          start = s.find('function securityTrusted(')
+          if start != -1:
+              end = s.find('client.on("roleCreate"', start)
+              if end != -1:
+                  s = s[:start] + s[end:]
+          start = s.find('client.on("roleCreate"')
+          if start != -1:
+              nxt = s.find('\nclient.on(', start + 15)
+              if nxt != -1:
+                  s = s[:start] + s[nxt + 1:]
+          s = re.sub(r'\\n\\n-security[^`]*?(?=\\n\\n|`)', '', s, flags=re.I)
+          s = re.sub(r'\\n\\nSecurity:[^`]*?(?=\\n\\n|`)', '', s, flags=re.I)
           p.write_text(s)
           PY
-
           node --check src/app.js
-      - name: Commit changes
+      - name: Commit cleanup
         shell: bash
         run: |
           git config user.name 'vcplus-bot'
           git config user.email 'actions@github.com'
           if git diff --quiet; then echo 'No changes needed'; exit 0; fi
           git add src/app.js
-          git commit -m 'Fix VC creation security false positive'
+          git commit -m 'Remove automatic security layer'
           git push
