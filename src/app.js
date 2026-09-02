@@ -367,7 +367,47 @@ function canManageVouches(member) {
     );
 
 }
+if (command === "removerank") {
+    const target = message.mentions.members.first();
+    const role = message.mentions.roles.first();
 
+    if (!target || !role) {
+        return sendBox(
+            message,
+            "Remove Rank",
+            "Usage: `-removerank @user @Role`"
+        );
+    }
+
+    if (!role.editable) {
+        return sendBox(
+            message,
+            "Remove Rank",
+            "I can't remove that role. Make sure my bot role is above it."
+        );
+    }
+
+    try {
+        await target.roles.remove(
+            role,
+            `Rank removed by ${message.author.tag}`
+        );
+
+        return sendBox(
+            message,
+            "Remove Rank",
+            `Removed <@&${role.id}> from <@${target.id}>.`
+        );
+    } catch (error) {
+        console.error(error);
+
+        return sendBox(
+            message,
+            "Remove Rank",
+            "I couldn't remove that role."
+        );
+    }
+}
 
 // ============================================================
 // GUILD CONFIG
