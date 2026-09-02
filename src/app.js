@@ -489,3 +489,277 @@ async function startBot() {
     catch (e) { console.error("[VC+ LOGIN ERROR]", e); process.exit(1); }
 }
 startBot();
+
+
+// VCPLUS_EXPANDED_INTERFACE_V1
+// Expanded VC+ interface controls. This is intentionally appended so the
+// existing command system remains intact.
+const {
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
+} = await import("discord.js");
+
+function vcInterfaceComponents() {
+    const row1 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("vcui_lock").setLabel("Lock").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("vcui_unlock").setLabel("Unlock").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("vcui_claim").setLabel("Claim").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("vcui_refresh").setLabel("Refresh").setStyle(ButtonStyle.Secondary)
+    );
+    const row2 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("vcui_kick").setLabel("Kick").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("vcui_disconnect").setLabel("Disconnect").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("vcui_ban").setLabel("VC Ban").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("vcui_reject").setLabel("Reject").setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId("vcui_permit").setLabel("Permit").setStyle(ButtonStyle.Secondary)
+    );
+    const row3 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("vcui_limit").setLabel("Limit").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("vcui_rename").setLabel("Rename").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("vcui_transfer").setLabel("Transfer").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("vcui_forceclaim").setLabel("Force Claim").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("vcui_stfu").setLabel("STFU").setStyle(ButtonStyle.Danger)
+    );
+    const row4 = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId("vcui_unstfu").setLabel("UnSTFU").setStyle(ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId("vcui_help").setLabel("VC Help").setStyle(ButtonStyle.Secondary)
+    );
+    return [row1, row2, row3, row4];
+}
+
+function vcInterfacePayload() {
+    return {
+        embeds: [new EmbedBuilder()
+            .setTitle("VC+ | Voice Control")
+            .setDescription("Manage your temporary voice channel from this panel.\n\nUse the controls below for locking, members, access, ownership, limits, and channel settings.")
+            .setFooter({ text: "VC+ Voice Control" })],
+        components: vcInterfaceComponents()
+    };
+}
+
+function getUserFromInteraction(interaction) {
+    const value = interaction.fields.getTextInputValue("vcui_user").trim();
+    const mention = value.match(/^<@!?(\d+)>$/);
+    const id = mention ? mention[1] : value;
+    return interaction.guild.members.cache.get(id) || null;
+}
+
+function getCurrentVC(interaction) {
+    return interaction.member?.voice?.channel || null;
+}
+
+function canControlVC(interaction, channel) {
+    if (!interaction.guild || !interaction.member || !channel) return false;
+    const c = getGuildConfig(interaction.guild.id);
+    const ownerId = c.voice?.owners?.[channel.id];
+    return hasGodAccess(interaction.member) || ownerId === interaction.user.id;
+}
+
+async function vcUserModal(interaction, action) {
+    const labels = {
+        kick: "User to kick",
+        disconnect: "User to disconnect",
+        ban: "User to VC ban",
+        reject: "User to reject",
+        permit: "User to permit",
+        transfer: "Transfer ownership to",
+        stfu: "User to STFU",
+        unstfu: "User to UnSTFU"
+    };
+    const modal = new ModalBuilder()
+        .setCustomId(`vcui_modal_${action}`)
+        .setTitle(`VC+ | ${labels[action] || "User"}`);
+    const input = new TextInputBuilder()
+        .setCustomId("vcui_user")
+        .setLabel("User ID or @mention")
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setPlaceholder("123456789012345678 or @user");
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    return interaction.showModal(modal);
+}
+
+async function vcSimpleModal(interaction, action) {
+    const settings = {
+        limit: ["User limit", TextInputStyle.Short, "0 to 99"],
+        rename: ["New channel name", TextInputStyle.Short, "My VC"]
+    };
+    const s = settings[action];
+    if (!s) return;
+    const modal = new ModalBuilder()
+        .setCustomId(`vcui_modal_${action}`)
+        .setTitle(`VC+ | ${s[0]}`);
+    const input = new TextInputBuilder()
+        .setCustomId("vcui_value")
+        .setLabel(s[0])
+        .setStyle(s[1])
+        .setRequired(true)
+        .setPlaceholder(s[2]);
+    modal.addComponents(new ActionRowBuilder().addComponents(input));
+    return interaction.showModal(modal);
+}
+
+async function refreshStoredInterface() {
+    for (const guild of client.guilds.cache.values()) {
+        try {
+            const c = getGuildConfig(guild.id);
+            if (!c.interfaceChannel || !c.interfaceMessage) continue;
+            const channel = await guild.channels.fetch(c.interfaceChannel).catch(() => null);
+            if (!channel || !channel.isTextBased()) continue;
+            const msg = await channel.messages.fetch(c.interfaceMessage).catch(() => null);
+            if (!msg) continue;
+            await msg.edit(vcInterfacePayload()).catch(() => null);
+        } catch (error) {
+            console.error("[VC+ INTERFACE REFRESH]", error);
+        }
+    }
+}
+
+async function editVCInterfaceAfterCommand(message) {
+    if (message.author.bot || !message.guild) return;
+    if (message.content.trim().toLowerCase() !== "-interface") return;
+    setTimeout(refreshStoredInterface, 1500);
+}
+client.on("messageCreate", editVCInterfaceAfterCommand);
+
+client.on("ready", () => {
+    setTimeout(refreshStoredInterface, 2000);
+});
+
+client.on("interactionCreate", async interaction => {
+    try {
+        if (!interaction.isButton() && !interaction.isModalSubmit()) return;
+
+        if (interaction.isButton() && interaction.customId === "vcui_help") {
+            return interaction.reply({
+                ephemeral: true,
+                embeds: [new EmbedBuilder().setTitle("VC+ | Voice Controls").setDescription(
+                    "Lock: Lock the current VC.\n" +
+                    "Unlock: Unlock the current VC.\n" +
+                    "Claim: Claim an available VC.\n" +
+                    "Kick: Disconnect a selected member.\n" +
+                    "Disconnect: Disconnect a selected member.\n" +
+                    "VC Ban: Prevent a selected member from using the VC.\n" +
+                    "Reject: Remove a selected member from the VC.\n" +
+                    "Permit: Allow a selected member.\n" +
+                    "Limit: Change the VC user limit.\n" +
+                    "Rename: Rename the VC.\n" +
+                    "Transfer: Transfer ownership.\n" +
+                    "Force Claim: Force ownership when permitted.\n" +
+                    "STFU: Server mute a selected member.\n" +
+                    "UnSTFU: Remove server mute."
+                )]
+            });
+        }
+
+        if (interaction.isButton() && interaction.customId === "vcui_refresh") {
+            await refreshStoredInterface();
+            return interaction.reply({ ephemeral: true, content: "```VC+\nInterface refreshed.\n```" });
+        }
+
+        const channel = getCurrentVC(interaction);
+        if (!channel) {
+            return interaction.reply({ ephemeral: true, content: "```VC+\nJoin your temporary VC first.\n```" });
+        }
+        if (!canControlVC(interaction, channel)) {
+            return interaction.reply({ ephemeral: true, content: "```VC+\nYou do not control this VC.\n```" });
+        }
+
+        const c = getGuildConfig(interaction.guild.id);
+        const action = interaction.customId.replace("vcui_", "");
+
+        if (interaction.isButton()) {
+            if (["kick", "disconnect", "ban", "reject", "permit", "transfer", "stfu", "unstfu"].includes(action)) {
+                return vcUserModal(interaction, action);
+            }
+            if (["limit", "rename"].includes(action)) return vcSimpleModal(interaction, action);
+
+            if (action === "lock") {
+                await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { Connect: false }, { reason: "VC+ interface lock" });
+                c.voice.locked[channel.id] = true;
+                saveJSON(CONFIG_FILE, configs);
+                return interaction.reply({ ephemeral: true, content: "```VC+\nVC locked.\n```" });
+            }
+            if (action === "unlock") {
+                await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { Connect: null }, { reason: "VC+ interface unlock" });
+                delete c.voice.locked[channel.id];
+                saveJSON(CONFIG_FILE, configs);
+                return interaction.reply({ ephemeral: true, content: "```VC+\nVC unlocked.\n```" });
+            }
+            if (action === "claim") {
+                c.voice.owners[channel.id] = interaction.user.id;
+                saveJSON(CONFIG_FILE, configs);
+                return interaction.reply({ ephemeral: true, content: "```VC+\nYou now own this VC.\n```" });
+            }
+            if (action === "forceclaim") {
+                if (!hasGodAccess(interaction.member)) return interaction.reply({ ephemeral: true, content: "```VC+\nGod access is required for Force Claim.\n```" });
+                c.voice.owners[channel.id] = interaction.user.id;
+                saveJSON(CONFIG_FILE, configs);
+                return interaction.reply({ ephemeral: true, content: "```VC+\nVC ownership force claimed.\n```" });
+            }
+        }
+
+        if (interaction.isModalSubmit()) {
+            const modalAction = interaction.customId.replace("vcui_modal_", "");
+            if (["limit", "rename"].includes(modalAction)) {
+                const value = interaction.fields.getTextInputValue("vcui_value").trim();
+                if (modalAction === "limit") {
+                    const limit = Number(value);
+                    if (!Number.isInteger(limit) || limit < 0 || limit > 99) return interaction.reply({ ephemeral: true, content: "```VC+\nLimit must be a whole number from 0 to 99.\n```" });
+                    await channel.setUserLimit(limit, "VC+ interface limit");
+                    c.voice.limits[channel.id] = limit;
+                    saveJSON(CONFIG_FILE, configs);
+                    return interaction.reply({ ephemeral: true, content: `\`\`\`VC+\nUser limit set to ${limit}.\n\`\`\`` });
+                }
+                const name = value.slice(0, 100);
+                if (!name) return interaction.reply({ ephemeral: true, content: "```VC+\nEnter a channel name.\n```" });
+                await channel.setName(name, "VC+ interface rename");
+                return interaction.reply({ ephemeral: true, content: "```VC+\nVC renamed.\n```" });
+            }
+
+            const target = getUserFromInteraction(interaction);
+            if (!target) return interaction.reply({ ephemeral: true, content: "```VC+\nMember not found. Use a valid server member ID or @mention.\n```" });
+            if (target.id === interaction.user.id && ["kick", "disconnect", "ban", "reject", "stfu"].includes(modalAction)) {
+                return interaction.reply({ ephemeral: true, content: "```VC+\nYou cannot use this control on yourself.\n```" });
+            }
+
+            if (["kick", "disconnect", "reject"].includes(modalAction)) {
+                if (target.voice.channelId === channel.id) await target.voice.disconnect("VC+ interface control").catch(() => null);
+                return interaction.reply({ ephemeral: true, content: "```VC+\nMember disconnected.\n```" });
+            }
+            if (modalAction === "ban") {
+                c.voice.banned[channel.id] ??= [];
+                if (!c.voice.banned[channel.id].includes(target.id)) c.voice.banned[channel.id].push(target.id);
+                if (target.voice.channelId === channel.id) await target.voice.disconnect("VC+ VC ban").catch(() => null);
+                saveJSON(CONFIG_FILE, configs);
+                return interaction.reply({ ephemeral: true, content: "```VC+\nMember VC banned.\n```" });
+            }
+            if (modalAction === "permit") {
+                c.voice.permitted[channel.id] ??= [];
+                if (!c.voice.permitted[channel.id].includes(target.id)) c.voice.permitted[channel.id].push(target.id);
+                if (c.voice.banned[channel.id]) c.voice.banned[channel.id] = c.voice.banned[channel.id].filter(id => id !== target.id);
+                saveJSON(CONFIG_FILE, configs);
+                return interaction.reply({ ephemeral: true, content: "```VC+\nMember permitted.\n```" });
+            }
+            if (modalAction === "transfer") {
+                c.voice.owners[channel.id] = target.id;
+                saveJSON(CONFIG_FILE, configs);
+                return interaction.reply({ ephemeral: true, content: "```VC+\nVC ownership transferred.\n```" });
+            }
+            if (modalAction === "stfu") {
+                if (target.voice.channelId === channel.id) await target.voice.setMute(true, "VC+ interface STFU").catch(() => null);
+                return interaction.reply({ ephemeral: true, content: "```VC+\nMember server muted.\n```" });
+            }
+            if (modalAction === "unstfu") {
+                if (target.voice.channelId === channel.id) await target.voice.setMute(false, "VC+ interface UnSTFU").catch(() => null);
+                return interaction.reply({ ephemeral: true, content: "```VC+\nMember server mute removed.\n```" });
+            }
+        }
+    } catch (error) {
+        console.error("[VC+ INTERFACE ERROR]", error);
+        if (!interaction.replied && !interaction.deferred) {
+            await interaction.reply({ ephemeral: true, content: "```VC+\nThe interface action failed. Check the bot permissions and try again.\n```" }).catch(() => null);
+        }
+    }
+});
