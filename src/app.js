@@ -1905,563 +1905,530 @@ async function handlePurge(message, args) {
 }
 
 
-// ============================================================
-// VOUCH SYSTEM
-// ============================================================
+// ======================================================
+// VOUCH COMMANDS
+// ======================================================
 
-async function handleVouch(
-    message,
-    args
-) {
-
-    const guildConfig =
-        getGuildConfig(
-            message.guild.id
-        );
+if (command === "vouch") {
 
     const sub =
         args[0]?.toLowerCase();
 
-
-    // ========================================================
-    // SET ROLE
+    // ==================================================
     // -vouch set role @Role
-    // ========================================================
+    // ==================================================
 
     if (
         sub === "set" &&
-        args[1]?.toLowerCase() ===
-        "role"
+        args[1]?.toLowerCase() === "role"
     ) {
 
         if (
-            !canManageVouches(
-                message.member
-            )
+            !isServerOwner(member) &&
+            !isFounder(member)
         ) {
-
-            return deny(message);
-
+            return sendBox(
+                message,
+                "Vouch",
+                "Only the **Server Owner** or **Founder** can manage the vouch role."
+            );
         }
 
         const role =
             message.mentions.roles.first();
 
         if (!role) {
-
-            return usage(
+            return sendBox(
                 message,
-                "-vouch set role @Role"
+                "Vouch",
+                "Usage: `-vouch set role @Role`"
             );
+        }
 
+        if (role.managed) {
+            return sendBox(
+                message,
+                "Vouch",
+                "That role is managed by Discord and cannot be used."
+            );
         }
 
         const botMember =
-            message.guild.members.me;
+            message.guild.members.me ||
+            await message.guild.members.fetchMe()
+                .catch(() => null);
 
         if (!botMember) {
-
-            return safeReply(
+            return sendBox(
                 message,
-                "```VC+\nI could not verify my bot role.\n```"
+                "Vouch",
+                "I couldn't find my bot member."
             );
-
         }
 
         if (
             role.position >=
             botMember.roles.highest.position
         ) {
-
-            return safeReply(
-
+            return sendBox(
                 message,
-
-                "```VC+\nThat role must be below my highest role.\n```"
-
+                "Vouch",
+                "That role must be below my highest role."
             );
-
         }
 
-        guildConfig.vouchRole =
+        const data =
+            getGuildData(
+                message.guild.id
+            );
+
+        data.roles.vouch =
             role.id;
 
-        saveJSON(
-            CONFIG_FILE,
-            configs
-        );
+        saveDB();
 
-        return safeReply(
-
+        return sendBox(
             message,
-
-            `\`\`\`\nVC+\nVouch role set to ${role.name}.\n\`\`\``
-
+            "Vouch",
+            `Vouch role set to <@&${role.id}>.`
         );
-
     }
 
-
-    // ========================================================
-    // OLD SYNTAX SUPPORT
-    // -vouch role set @Role
-    // ========================================================
-
-    if (
-        sub === "role" &&
-        args[1]?.toLowerCase() ===
-        "set"
-    ) {
-
-        if (
-            !canManageVouches(
-                message.member
-            )
-        ) {
-
-            return deny(message);
-
-        }
-
-        const role =
-            message.mentions.roles.first();
-
-        if (!role) {
-
-            return usage(
-                message,
-                "-vouch set role @Role"
-            );
-
-        }
-
-        const botMember =
-            message.guild.members.me;
-
-        if (
-            botMember &&
-            role.position >=
-            botMember.roles.highest.position
-        ) {
-
-            return safeReply(
-
-                message,
-
-                "```VC+\nThat role must be below my highest role.\n```"
-
-            );
-
-        }
-
-        guildConfig.vouchRole =
-            role.id;
-
-        saveJSON(
-            CONFIG_FILE,
-            configs
-        );
-
-        return safeReply(
-
-            message,
-
-            `\`\`\`\nVC+\nVouch role set to ${role.name}.\n\`\`\``
-
-        );
-
-    }
-
-
-    // ========================================================
-    // VIEW ROLE
-    // ========================================================
+    // ==================================================
+    // -vouch role
+    // ==================================================
 
     if (sub === "role") {
 
-        if (
-            !canManageVouches(
-                message.member
-            )
-        ) {
+        const data =
+            getGuildData(
+                message.guild.id
+            );
 
-            return deny(message);
-
+        if (!data.roles.vouch) {
+            return sendBox(
+                message,
+                "Vouch",
+                "No vouch role has been configured.\n\nUse `-vouch set role @Role`."
+            );
         }
 
         const role =
-            guildConfig.vouchRole
-                ? message.guild.roles.cache.get(
-                    guildConfig.vouchRole
-                )
-                : null;
+            message.guild.roles.cache.get(
+                data.roles.vouch
+            );
 
-        return safeReply(
+        if (!role) {
+            return sendBox(
+                message,
+                "Vouch",
+                "The configured vouch role no longer exists."
+            );
+        }
 
+        return sendBox(
             message,
-
-            `\`\`\`\nVC+\nVouch Role: ${role ? role.name : "Not configured"}\n\`\`\``
-
+            "Vouch",
+            `Current Vouch Role: <@&${role.id}>`
         );
-
     }
 
-
-    // ========================================================
-    // GIVE VOUCH
-    // ========================================================
+    // ==================================================
+    // -vouch give @user reason
+    // ==================================================
 
     if (sub === "give") {
 
         if (
-            !canManageVouches(
-                message.member
-            )
+            !isServerOwner(member) &&
+            !isFounder(member)
         ) {
-
-            return deny(message);
-
+            return sendBox(
+                message,
+                "Vouch",
+                "Only the **Server Owner** or **Founder** can give vouches."
+            );
         }
 
         const target =
-            message.mentions.members.first();
-
-        if (!target) {
-
-            return usage(
+            await getTarget(
                 message,
-                "-vouch give @user reason"
+                args[1]
             );
 
+        if (!target) {
+            return sendBox(
+                message,
+                "Vouch",
+                "Usage: `-vouch give @user reason`"
+            );
         }
 
         const reason =
-            args.slice(2).join(" ") ||
-            "No reason provided";
+            args
+                .slice(2)
+                .join(" ")
+                .trim();
 
-        if (
-            !guildConfig.vouches[
-                target.id
-            ]
-        ) {
-
-            guildConfig.vouches[
-                target.id
-            ] = [];
-
+        if (!reason) {
+            return sendBox(
+                message,
+                "Vouch",
+                "You need to provide a reason."
+            );
         }
 
-        guildConfig.vouches[
-            target.id
-        ].push({
+        if (reason.length > 500) {
+            return sendBox(
+                message,
+                "Vouch",
+                "The reason must be 500 characters or less."
+            );
+        }
 
-            by:
-                message.author.id,
+        const role =
+            getConfiguredVouchRole(
+                message.guild
+            );
 
-            reason,
+        if (!role) {
+            return sendBox(
+                message,
+                "Vouch",
+                "No vouch role is configured.\n\nUse `-vouch set role @Role` first."
+            );
+        }
 
-            timestamp:
-                Date.now()
+        const data =
+            getGuildData(
+                message.guild.id
+            );
 
+        if (!data.vouches[target.id]) {
+            data.vouches[target.id] = [];
+        }
+
+        data.vouches[target.id].push({
+            from: message.author.id,
+            reason: reason,
+            timestamp: Date.now()
         });
 
+        saveDB();
 
-        // ====================================================
-        // AUTOMATIC VOUCH ROLE
-        // ====================================================
+        const roleGiven =
+            await giveVouchRole(
+                message.guild,
+                target.id
+            );
 
-        let roleStatus =
-            "No vouch role configured.";
+        const total =
+            data.vouches[target.id].length;
 
-        if (
-            guildConfig.vouchRole
-        ) {
-
-            const role =
-                message.guild.roles.cache.get(
-                    guildConfig.vouchRole
-                );
-
-            if (!role) {
-
-                guildConfig.vouchRole =
-                    null;
-
-                roleStatus =
-                    "Configured vouch role no longer exists.";
-
-            } else {
-
-                const botMember =
-                    message.guild.members.me;
-
-                if (
-                    botMember &&
-                    role.position >=
-                    botMember.roles.highest.position
-                ) {
-
-                    roleStatus =
-                        "Vouch saved, but the role is above my highest role.";
-
-                } else if (
-                    !target.roles.cache.has(
-                        role.id
-                    )
-                ) {
-
-                    try {
-
-                        await target.roles.add(
-
-                            role,
-
-                            `VC+ vouch by ${message.author.tag}`
-
-                        );
-
-                        roleStatus =
-                            `Role assigned: ${role.name}`;
-
-                    } catch (error) {
-
-                        console.error(
-                            "[VOUCH ROLE ERROR]",
-                            error
-                        );
-
-                        roleStatus =
-                            "Vouch saved, but I could not assign the role.";
-
-                    }
-
-                } else {
-
-                    roleStatus =
-                        `Role already assigned: ${role.name}`;
-
-                }
-
-            }
-
-        }
-
-        saveJSON(
-            CONFIG_FILE,
-            configs
-        );
-
-        return safeReply(
-
+        return sendBox(
             message,
-
-            `\`\`\`\nVC+\nVouch added to ${target.user.tag}.\nReason: ${reason}\n${roleStatus}\n\`\`\``
-
+            "Vouch",
+            [
+                `<@${message.author.id}> vouched for <@${target.id}>.`,
+                "",
+                `Reason: **${reason}**`,
+                "",
+                `Total Vouches: **${total}**`,
+                "",
+                roleGiven
+                    ? `Vouch role: <@&${role.id}>`
+                    : "The vouch was saved, but I could not give the configured role."
+            ].join("\n")
         );
-
     }
 
-
-    // ========================================================
-    // CLEAR
-    // ========================================================
+    // ==================================================
+    // -vouch clear @user
+    // -vouch clear everyone
+    // ==================================================
 
     if (sub === "clear") {
 
         if (
-            !canManageVouches(
-                message.member
-            )
+            !isServerOwner(member) &&
+            !isFounder(member)
         ) {
-
-            return deny(message);
-
+            return sendBox(
+                message,
+                "Vouch",
+                "Only the **Server Owner** or **Founder** can clear vouches."
+            );
         }
+
+        // ----------------------------------------------
+        // CLEAR EVERYONE
+        // ----------------------------------------------
 
         if (
             args[1]?.toLowerCase() ===
             "everyone"
         ) {
 
-            guildConfig.vouches =
-                {};
+            const data =
+                getGuildData(
+                    message.guild.id
+                );
 
-            saveJSON(
-                CONFIG_FILE,
-                configs
-            );
+            const role =
+                getConfiguredVouchRole(
+                    message.guild
+                );
 
-            return safeReply(
+            // Clear database FIRST.
+            data.vouches = {};
 
+            saveDB();
+
+            let removed = 0;
+            let failed = 0;
+
+            if (role) {
+
+                try {
+                    await message.guild.members.fetch();
+                } catch {}
+
+                const members =
+                    [...role.members.values()];
+
+                for (const target of members) {
+
+                    try {
+
+                        if (!target.manageable) {
+                            failed++;
+                            continue;
+                        }
+
+                        await target.roles.remove(
+                            role,
+                            "VC+ Vouch Clear Everyone"
+                        );
+
+                        removed++;
+
+                    } catch {
+                        failed++;
+                    }
+                }
+            }
+
+            return sendBox(
                 message,
-
-                "```VC+\nAll vouches cleared.\n```"
-
+                "Vouch",
+                [
+                    "**Everyone's vouches have been cleared.**",
+                    "",
+                    `Vouch role removed from: **${removed}** member${removed === 1 ? "" : "s"}.`,
+                    `Failed removals: **${failed}**.`
+                ].join("\n")
             );
-
         }
+
+        // ----------------------------------------------
+        // CLEAR ONE USER
+        // ----------------------------------------------
 
         const target =
-            message.mentions.members.first();
-
-        if (!target) {
-
-            return usage(
+            await getTarget(
                 message,
-                "-vouch clear @user"
+                args[1]
             );
 
+        if (!target) {
+            return sendBox(
+                message,
+                "Vouch",
+                "Usage: `-vouch clear @user`\n\nOr: `-vouch clear everyone`"
+            );
         }
 
-        delete guildConfig.vouches[
-            target.id
-        ];
+        const data =
+            getGuildData(
+                message.guild.id
+            );
 
-        saveJSON(
-            CONFIG_FILE,
-            configs
-        );
+        // Delete their vouches FIRST.
+        delete data.vouches[target.id];
 
-        return safeReply(
+        saveDB();
 
+        // Remove the EXACT configured role.
+        const roleRemoved =
+            await removeVouchRole(
+                message.guild,
+                target.id
+            );
+
+        return sendBox(
             message,
-
-            `\`\`\`\nVC+\nVouches cleared for ${target.user.tag}.\n\`\`\``
-
+            "Vouch",
+            [
+                `Cleared all vouches from <@${target.id}>.`,
+                "",
+                roleRemoved
+                    ? "The configured vouch role was removed."
+                    : "The vouch role could not be removed."
+            ].join("\n")
         );
-
     }
 
+    // ==================================================
+    // -vouch clearall
+    // ==================================================
 
-    // ========================================================
-    // LIST
-    // ========================================================
+    if (sub === "clearall") {
+
+        if (
+            !isServerOwner(member) &&
+            !isFounder(member)
+        ) {
+            return sendBox(
+                message,
+                "Vouch",
+                "Only the **Server Owner** or **Founder** can clear vouches."
+            );
+        }
+
+        const data =
+            getGuildData(
+                message.guild.id
+            );
+
+        const role =
+            getConfiguredVouchRole(
+                message.guild
+            );
+
+        data.vouches = {};
+
+        saveDB();
+
+        let removed = 0;
+        let failed = 0;
+
+        if (role) {
+
+            try {
+                await message.guild.members.fetch();
+            } catch {}
+
+            for (
+                const target
+                of [...role.members.values()]
+            ) {
+
+                try {
+
+                    if (!target.manageable) {
+                        failed++;
+                        continue;
+                    }
+
+                    await target.roles.remove(
+                        role,
+                        "VC+ Vouch Clear All"
+                    );
+
+                    removed++;
+
+                } catch {
+                    failed++;
+                }
+            }
+        }
+
+        return sendBox(
+            message,
+            "Vouch",
+            [
+                "**All vouches have been cleared.**",
+                "",
+                `Vouch role removed from: **${removed}** member${removed === 1 ? "" : "s"}.`,
+                `Failed removals: **${failed}**.`
+            ].join("\n")
+        );
+    }
+
+    // ==================================================
+    // -vouch list
+    // ==================================================
 
     if (sub === "list") {
 
-        return sendVouchList(
-            message
-        );
+        const data =
+            getGuildData(
+                message.guild.id
+            );
 
-    }
-
-
-    return safeReply(
-
-        message,
-
-        "```VC+\nVouch commands:\n-vouch set role @Role\n-vouch role\n-vouch give @user reason\n-vouch clear @user\n-vouch clear everyone\n-vouch list\n-vouches @user\n```"
-
-    );
-
-}
-
-
-async function sendVouchList(message) {
-
-    const guildConfig =
-        getGuildConfig(
-            message.guild.id
-        );
-
-    const entries =
-        Object.entries(
-            guildConfig.vouches
-        );
-
-    if (!entries.length) {
-
-        return safeReply(
-
-            message,
-
-            "```VC+\nNo vouches have been recorded.\n```"
-
-        );
-
-    }
-
-    let text = "";
-
-    for (
-        const [userId, list]
-        of entries.slice(0, 20)
-    ) {
-
-        text +=
-            `${userId}: ${list.length} vouch(es)\n`;
-
-    }
-
-    return safeReply(
-
-        message,
-
-        `\`\`\`\nVC+ | VOUCHES\n\n${text}\n\`\`\``
-
-    );
-
-}
-
-
-async function handleVouches(
-    message,
-    args
-) {
-
-    const target =
-        message.mentions.members.first();
-
-    if (!target) {
-
-        return usage(
-            message,
-            "-vouches @user"
-        );
-
-    }
-
-    const guildConfig =
-        getGuildConfig(
-            message.guild.id
-        );
-
-    const list =
-        guildConfig.vouches[
-            target.id
-        ] || [];
-
-    if (!list.length) {
-
-        return safeReply(
-
-            message,
-
-            `\`\`\`\nVC+\n${target.user.tag} has 0 vouches.\n\`\`\``
-
-        );
-
-    }
-
-    const text =
-        list
-            .slice(-10)
-            .map(
-                (v, i) =>
-                    `${i + 1}. ${v.reason}`
+        const entries =
+            Object.entries(
+                data.vouches
             )
-            .join("\n");
+            .map(
+                ([userId, vouches]) => ({
+                    userId,
+                    count:
+                        Array.isArray(vouches)
+                            ? vouches.length
+                            : 0
+                })
+            )
+            .filter(
+                entry =>
+                    entry.count > 0
+            )
+            .sort(
+                (a, b) =>
+                    b.count - a.count
+            )
+            .slice(0, 10);
 
-    return safeReply(
+        if (!entries.length) {
+            return sendBox(
+                message,
+                "Vouch Leaderboard",
+                "There are no vouches yet."
+            );
+        }
 
+        const description =
+            entries
+                .map(
+                    (entry, index) =>
+                        `**${index + 1}.** <@${entry.userId}> — **${entry.count}**`
+                )
+                .join("\n");
+
+        return sendBox(
+            message,
+            "Vouch Leaderboard",
+            description
+        );
+    }
+
+    return sendBox(
         message,
-
-        `\`\`\`\nVC+ | ${target.user.tag}\n\nVouches: ${list.length}\n\n${text}\n\`\`\``
-
+        "Vouch",
+        [
+            "**Vouch Commands**",
+            "",
+            "`-vouch set role @Role`",
+            "`-vouch role`",
+            "`-vouch give @user reason`",
+            "`-vouch clear @user`",
+            "`-vouch clear everyone`",
+            "`-vouch clearall`",
+            "`-vouch list`",
+            "`-vouches @user`"
+        ].join("\n")
     );
-
 }
-
 
 // ============================================================
 // FILTER
