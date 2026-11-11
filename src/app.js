@@ -65,6 +65,10 @@ function defaultGuild() {
       users: {}
     },
 
+    roleManagement: {
+      limit: 10
+    },
+
     ranks: {},
 
     godmode: {},
@@ -156,6 +160,9 @@ function getGuildData(guildId) {
   guild.vouch.roleLimit ??= 0;
   guild.vouch.userLimit ??= 0;
   guild.vouch.users ??= {};
+
+  guild.roleManagement ??= {};
+  guild.roleManagement.limit ??= 10;
 
   guild.ranks ??= {};
   guild.godmode ??= {};
@@ -257,6 +264,34 @@ function hasStaffAccess(member, guildData) {
   ) >= 3;
 }
 
+function canManageRoles(member, guildData) {
+  return Boolean(
+    member &&
+    hasStaffAccess(member, guildData) &&
+    member.permissions.has(
+      PermissionsBitField.Flags.ManageRoles
+    )
+  );
+}
+
+function countAssignableRoles(member) {
+  return member.roles.cache.filter(role =>
+    role.id !== member.guild.id && !role.managed
+  ).size;
+}
+
+function canActorManageRole(actor, role) {
+  if (!actor || !role) return false;
+  if (actor.id === actor.guild.ownerId) return true;
+  return actor.roles.highest.comparePositionTo(role) > 0;
+}
+
+function canBotManageRole(guild, role) {
+  const bot = guild.members.me;
+  if (!bot || !role || role.managed) return false;
+  return bot.roles.highest.comparePositionTo(role) > 0;
+}
+
 function isVCOwner(member, channel, guildData) {
   if (!member || !channel) return false;
 
@@ -352,6 +387,14 @@ client.on("messageCreate", async message => {
           "`-vc limit 5` `-vc claim`",
 
           "",
+          "**ROLE MANAGEMENT**",
+          "`-role limit` `-role limit 10`",
+          "`-role add @user @role`",
+          "`-role remove @user @role`",
+          "`-role create name` `-role delete @role`",
+          "`-role info @role` `-role color @role #HEX`",
+
+          "",
           "**VOUCH**",
           "`-vouch @user`",
           "`-vouch role set @role`",
@@ -385,6 +428,154 @@ client.on("messageCreate", async message => {
           "`-godmode @user`"
         ].join("\n")
       );
+    }
+
+    // ========================================================
+    // ROLE MANAGEMENT
+    // ========================================================
+
+    if (command === "role") {
+      const action = args.shift()?.toLowerCase();
+      const actor = message.member;
+      const botMember = message.guild.members.me;
+
+      if (!action || !["limit", "add", "remove", "create", "delete", "info", "color"].includes(action)) {
+        return reply(
+          message,
+          "✦ Role Management",
+          [
+            "\`-role limit\` — view the current limit",
+            "\`-role limit 10\` — set the limit per member",
+            "\`-role add @user @role\` — give a role",
+            "\`-role remove @user @role\` — remove a role",
+            "\`-role create name\` — create a role",
+            "\`-role delete @role\` — delete a role",
+            "\`-role info @role\` — view role details",
+            "\`-role color @role #5865F2\` — change role color",
+            "",
+            "Role changes require staff rank and Discord **Manage Roles** permission."
+          ].join("\n")
+        );
+      }
+
+      if (action === "limit" && args.length === 0) {
+        return reply(
+          message,
+          "✦ Role Limit",
+          \`Current maximum: **\${guildData.roleManagement.limit} roles per member**.\`
+        );
+      }
+
+      if (!canManageRoles(actor, guildData)) {
+        return reply(
+          message,
+          "⚠ Permission Denied",
+          "You need **Moderator rank or higher** and Discord's **Manage Roles** permission to use this command."
+        );
+      }
+
+      if (!botMember?.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
+        return reply(
+          message,
+          "⚠ Bot Permission Missing",
+          "I need the **Manage Roles** permission to manage server roles."
+        );
+      }
+
+      if (action === "limit") {
+        const amount = Number(args[0]);
+        if (!Number.isInteger(amount) || amount < 1 || amount > 250) {
+          return reply(message, "⚠ Invalid Limit", "Choose a whole number from **1 to 250**. Example: \`-role limit 10\`.");
+        }
+
+        guildData.roleManagement.limit = amount;
+        saveDB();
+        return reply(message, "✓ Role Limit Updated", \`Members can have up to **\${amount} assignable roles** through VC+.\`);
+      }
+
+      if (action === "add" || action === "remove") {
+        const target = message.mentions.members.first();
+        const role = message.mentions.roles.first();
+
+        if (!target || !role) {
+          return reply(message, "⚠ Missing Arguments", \`Use \`-role \${action} @user @role\`.\`);
+        }
+        if (role.id === message.guild.id || role.managed) {
+          return reply(message, "⚠ Invalid Role", "The @everyone role and integration-managed roles cannot be changed.");
+        }
+        if (!canActorManageRole(actor, role) || (target.id !== actor.id && actor.id !== message.guild.ownerId && target.roles.highest.comparePositionTo(actor.roles.highest) >= 0)) {
+          return reply(message, "⚠ Role Hierarchy", "You can only manage roles and members below your highest role.");
+        }
+        if (!canBotManageRole(message.guild, role)) {
+          return reply(message, "⚠ Bot Role Hierarchy", "Move my bot role above the role you want me to manage, then try again.");
+        }
+
+        if (action === "add") {
+          if (target.roles.cache.has(role.id)) {
+            return reply(message, "✦ Role Already Assigned", \`\${target} already has \${role}.\`);
+          }
+          const current = countAssignableRoles(target);
+          const limit = guildData.roleManagement.limit;
+          if (current >= limit) {
+            return reply(message, "⚠ Role Limit Reached", \`\${target} already has **\${current}/\${limit} roles**. Remove a role before adding another.\`);
+          }
+          await target.roles.add(role, \`VC+ role add by \${message.author.tag}\`);
+          return reply(message, "✓ Role Added", \`Added \${role} to \${target}. They now have **\${current + 1}/\${limit} roles**.\`);
+        }
+
+        if (!target.roles.cache.has(role.id)) {
+          return reply(message, "✦ Role Not Assigned", \`\${target} does not have \${role}.\`);
+        }
+        await target.roles.remove(role, \`VC+ role remove by \${message.author.tag}\`);
+        return reply(message, "✓ Role Removed", \`Removed \${role} from \${target}.\`);
+      }
+
+      if (action === "create") {
+        const name = args.join(" ").trim();
+        if (!name) return reply(message, "⚠ Missing Name", "Use \`-role create role name\`.");
+        if (name.length > 100) return reply(message, "⚠ Invalid Name", "Role names must be 100 characters or fewer.");
+        const created = await message.guild.roles.create({
+          name,
+          reason: \`VC+ role created by \${message.author.tag}\`
+        });
+        return reply(message, "✓ Role Created", \`Created \${created} successfully.\`);
+      }
+
+      if (action === "delete") {
+        const role = message.mentions.roles.first();
+        if (!role) return reply(message, "⚠ Missing Role", "Mention the role you want to delete.");
+        if (role.id === message.guild.id || role.managed) return reply(message, "⚠ Invalid Role", "That role cannot be deleted by VC+.");
+        if (!canActorManageRole(actor, role) || !canBotManageRole(message.guild, role)) {
+          return reply(message, "⚠ Role Hierarchy", "Both your highest role and my bot role must be above the role you want to delete.");
+        }
+        await role.delete(\`VC+ role deleted by \${message.author.tag}\`);
+        return reply(message, "✓ Role Deleted", \`Deleted **\${role.name}**.\`);
+      }
+
+      if (action === "info") {
+        const role = message.mentions.roles.first();
+        if (!role) return reply(message, "⚠ Missing Role", "Mention a role to view its information.");
+        return reply(message, "✦ Role Information", [
+          \`**Name:** \${role.name}\`,
+          \`**ID:** \\\`\${role.id}\\\`\`,
+          \`**Members:** \${role.members.size}\`,
+          \`**Color:** \${role.hexColor}\`,
+          \`**Position:** \${role.position}\`,
+          \`**Mentionable:** \${role.mentionable ? "Yes" : "No"}\`,
+          \`**Hoisted:** \${role.hoist ? "Yes" : "No"}\`
+        ].join("\n"));
+      }
+
+      if (action === "color") {
+        const role = message.mentions.roles.first();
+        const color = args.find(value => /^#?[0-9a-fA-F]{6}$/.test(value));
+        if (!role || !color) return reply(message, "⚠ Invalid Color", "Use \`-role color @role #5865F2\` with a six-digit HEX color.");
+        if (role.id === message.guild.id || role.managed || !canActorManageRole(actor, role) || !canBotManageRole(message.guild, role)) {
+          return reply(message, "⚠ Role Hierarchy", "You and the bot must be able to manage that role. Integration-managed roles cannot be edited.");
+        }
+        await role.setColor(color.startsWith("#") ? color : \`#\${color}\`, \`VC+ role color changed by \${message.author.tag}\`);
+        return reply(message, "✓ Role Color Updated", \`Updated \${role}'s color to **\${color.startsWith("#") ? color : \`#\${color}\`}**.\`);
+      }
     }
 
     // ========================================================
@@ -1269,6 +1460,22 @@ client.on("messageCreate", async message => {
             "The vouch role has reached its limit."
           );
         }
+      }
+
+      const assignableRoleCount = countAssignableRoles(target);
+      const assignableRoleLimit = guildData.roleManagement.limit;
+
+      if (
+        Number.isInteger(assignableRoleLimit) &&
+        assignableRoleLimit > 0 &&
+        !target.roles.cache.has(role.id) &&
+        assignableRoleCount >= assignableRoleLimit
+      ) {
+        return reply(
+          message,
+          "⚠ Role Limit Reached",
+          `${target} already has **${assignableRoleCount}/${assignableRoleLimit} roles** and cannot receive the vouch role.`
+        );
       }
 
       guildData.vouch.users[target.id] = {
