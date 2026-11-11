@@ -444,14 +444,14 @@ client.on("messageCreate", async message => {
           message,
           "✦ Role Management",
           [
-            "\`-role limit\` — view the current limit",
-            "\`-role limit 10\` — set the limit per member",
-            "\`-role add @user @role\` — give a role",
-            "\`-role remove @user @role\` — remove a role",
-            "\`-role create name\` — create a role",
-            "\`-role delete @role\` — delete a role",
-            "\`-role info @role\` — view role details",
-            "\`-role color @role #5865F2\` — change role color",
+            "`-role limit` — view the current limit",
+            "`-role limit 10` — set the limit per member",
+            "`-role add @user @role` — give a role",
+            "`-role remove @user @role` — remove a role",
+            "`-role create name` — create a role",
+            "`-role delete @role` — delete a role",
+            "`-role info @role` — view role details",
+            "`-role color @role #5865F2` — change role color",
             "",
             "Role changes require staff rank and Discord **Manage Roles** permission."
           ].join("\n")
@@ -462,7 +462,7 @@ client.on("messageCreate", async message => {
         return reply(
           message,
           "✦ Role Limit",
-          \`Current maximum: **\${guildData.roleManagement.limit} roles per member**.\`
+          `Current maximum: **${guildData.roleManagement.limit} roles per member**.`
         );
       }
 
@@ -485,12 +485,12 @@ client.on("messageCreate", async message => {
       if (action === "limit") {
         const amount = Number(args[0]);
         if (!Number.isInteger(amount) || amount < 1 || amount > 250) {
-          return reply(message, "⚠ Invalid Limit", "Choose a whole number from **1 to 250**. Example: \`-role limit 10\`.");
+          return reply(message, "⚠ Invalid Limit", "Choose a whole number from **1 to 250**. Example: `-role limit 10`.");
         }
 
         guildData.roleManagement.limit = amount;
         saveDB();
-        return reply(message, "✓ Role Limit Updated", \`Members can have up to **\${amount} assignable roles** through VC+.\`);
+        return reply(message, "✓ Role Limit Updated", `Members can have up to **${amount} assignable roles** through VC+.`);
       }
 
       if (action === "add" || action === "remove") {
@@ -498,7 +498,7 @@ client.on("messageCreate", async message => {
         const role = message.mentions.roles.first();
 
         if (!target || !role) {
-          return reply(message, "⚠ Missing Arguments", \`Use \`-role \${action} @user @role\`.\`);
+          return reply(message, "⚠ Missing Arguments", `Use `-role ${action} @user @role`.`);
         }
         if (role.id === message.guild.id || role.managed) {
           return reply(message, "⚠ Invalid Role", "The @everyone role and integration-managed roles cannot be changed.");
@@ -512,33 +512,33 @@ client.on("messageCreate", async message => {
 
         if (action === "add") {
           if (target.roles.cache.has(role.id)) {
-            return reply(message, "✦ Role Already Assigned", \`\${target} already has \${role}.\`);
+            return reply(message, "✦ Role Already Assigned", `${target} already has ${role}.`);
           }
           const current = countAssignableRoles(target);
           const limit = guildData.roleManagement.limit;
           if (current >= limit) {
-            return reply(message, "⚠ Role Limit Reached", \`\${target} already has **\${current}/\${limit} roles**. Remove a role before adding another.\`);
+            return reply(message, "⚠ Role Limit Reached", `${target} already has **${current}/${limit} roles**. Remove a role before adding another.`);
           }
-          await target.roles.add(role, \`VC+ role add by \${message.author.tag}\`);
-          return reply(message, "✓ Role Added", \`Added \${role} to \${target}. They now have **\${current + 1}/\${limit} roles**.\`);
+          await target.roles.add(role, `VC+ role add by ${message.author.tag}`);
+          return reply(message, "✓ Role Added", `Added ${role} to ${target}. They now have **${current + 1}/${limit} roles**.`);
         }
 
         if (!target.roles.cache.has(role.id)) {
-          return reply(message, "✦ Role Not Assigned", \`\${target} does not have \${role}.\`);
+          return reply(message, "✦ Role Not Assigned", `${target} does not have ${role}.`);
         }
-        await target.roles.remove(role, \`VC+ role remove by \${message.author.tag}\`);
-        return reply(message, "✓ Role Removed", \`Removed \${role} from \${target}.\`);
+        await target.roles.remove(role, `VC+ role remove by ${message.author.tag}`);
+        return reply(message, "✓ Role Removed", `Removed ${role} from ${target}.`);
       }
 
       if (action === "create") {
         const name = args.join(" ").trim();
-        if (!name) return reply(message, "⚠ Missing Name", "Use \`-role create role name\`.");
+        if (!name) return reply(message, "⚠ Missing Name", "Use `-role create role name`.");
         if (name.length > 100) return reply(message, "⚠ Invalid Name", "Role names must be 100 characters or fewer.");
         const created = await message.guild.roles.create({
           name,
-          reason: \`VC+ role created by \${message.author.tag}\`
+          reason: `VC+ role created by ${message.author.tag}`
         });
-        return reply(message, "✓ Role Created", \`Created \${created} successfully.\`);
+        return reply(message, "✓ Role Created", `Created ${created} successfully.`);
       }
 
       if (action === "delete") {
@@ -548,33 +548,33 @@ client.on("messageCreate", async message => {
         if (!canActorManageRole(actor, role) || !canBotManageRole(message.guild, role)) {
           return reply(message, "⚠ Role Hierarchy", "Both your highest role and my bot role must be above the role you want to delete.");
         }
-        await role.delete(\`VC+ role deleted by \${message.author.tag}\`);
-        return reply(message, "✓ Role Deleted", \`Deleted **\${role.name}**.\`);
+        await role.delete(`VC+ role deleted by ${message.author.tag}`);
+        return reply(message, "✓ Role Deleted", `Deleted **${role.name}**.`);
       }
 
       if (action === "info") {
         const role = message.mentions.roles.first();
         if (!role) return reply(message, "⚠ Missing Role", "Mention a role to view its information.");
         return reply(message, "✦ Role Information", [
-          \`**Name:** \${role.name}\`,
-          \`**ID:** \\\`\${role.id}\\\`\`,
-          \`**Members:** \${role.members.size}\`,
-          \`**Color:** \${role.hexColor}\`,
-          \`**Position:** \${role.position}\`,
-          \`**Mentionable:** \${role.mentionable ? "Yes" : "No"}\`,
-          \`**Hoisted:** \${role.hoist ? "Yes" : "No"}\`
+          `**Name:** ${role.name}`,
+          `**ID:** \\`${role.id}\\``,
+          `**Members:** ${role.members.size}`,
+          `**Color:** ${role.hexColor}`,
+          `**Position:** ${role.position}`,
+          `**Mentionable:** ${role.mentionable ? "Yes" : "No"}`,
+          `**Hoisted:** ${role.hoist ? "Yes" : "No"}`
         ].join("\n"));
       }
 
       if (action === "color") {
         const role = message.mentions.roles.first();
         const color = args.find(value => /^#?[0-9a-fA-F]{6}$/.test(value));
-        if (!role || !color) return reply(message, "⚠ Invalid Color", "Use \`-role color @role #5865F2\` with a six-digit HEX color.");
+        if (!role || !color) return reply(message, "⚠ Invalid Color", "Use `-role color @role #5865F2` with a six-digit HEX color.");
         if (role.id === message.guild.id || role.managed || !canActorManageRole(actor, role) || !canBotManageRole(message.guild, role)) {
           return reply(message, "⚠ Role Hierarchy", "You and the bot must be able to manage that role. Integration-managed roles cannot be edited.");
         }
-        await role.setColor(color.startsWith("#") ? color : \`#\${color}\`, \`VC+ role color changed by \${message.author.tag}\`);
-        return reply(message, "✓ Role Color Updated", \`Updated \${role}'s color to **\${color.startsWith("#") ? color : \`#\${color}\`}**.\`);
+        await role.setColor(color.startsWith("#") ? color : `#${color}`, `VC+ role color changed by ${message.author.tag}`);
+        return reply(message, "✓ Role Color Updated", `Updated ${role}'s color to **${color.startsWith("#") ? color : `#${color}`}**.`);
       }
     }
 
@@ -1001,7 +1001,7 @@ client.on("messageCreate", async message => {
         return reply(
           message,
           "✓ User Limit",
-          `Your voice channel limit is now \`${amount}\`.`
+          `Your voice channel limit is now `${amount}`.`
         );
       }
 
@@ -1044,7 +1044,7 @@ client.on("messageCreate", async message => {
         return reply(
           message,
           "🔇 Server Mute",
-          `${target} has been server muted.\n\nUse \`-vc unstfu @user\` to release.`
+          `${target} has been server muted.\n\nUse `-vc unstfu @user` to release.`
         );
       }
 
@@ -1173,7 +1173,7 @@ client.on("messageCreate", async message => {
           return reply(
             message,
             "✦ Vouch Role Limit",
-            `Maximum users: \`${amount}\``
+            `Maximum users: `${amount}``
           );
         }
 
@@ -1219,7 +1219,7 @@ client.on("messageCreate", async message => {
           return reply(
             message,
             "✦ Vouch Limit",
-            `Each user can give up to \`${amount}\` active vouches.`
+            `Each user can give up to `${amount}` active vouches.`
           );
         }
 
@@ -1228,7 +1228,7 @@ client.on("messageCreate", async message => {
             message,
             "✦ Vouch Limit",
             guildData.vouch.userLimit
-              ? `Current limit: \`${guildData.vouch.userLimit}\``
+              ? `Current limit: `${guildData.vouch.userLimit}``
               : "No vouch limit is configured."
           );
         }
@@ -1569,9 +1569,9 @@ client.on("messageCreate", async message => {
           message,
           `★ ${viewTarget.displayName}`,
           [
-            `Rank \`${rank}\``,
-            `Vouches \`${vouches}\``,
-            `Godmode \`${guildData.godmode[viewTarget.id] ? "On" : "Off"}\``
+            `Rank `${rank}``,
+            `Vouches `${vouches}``,
+            `Godmode `${guildData.godmode[viewTarget.id] ? "On" : "Off"}``
           ].join("\n")
         );
       }
@@ -1621,7 +1621,7 @@ client.on("messageCreate", async message => {
       return reply(
         message,
         "★ Rank",
-        `${target}\nRank \`${second}\``
+        `${target}\nRank `${second}``
       );
     }
 
@@ -1664,7 +1664,7 @@ client.on("messageCreate", async message => {
         "◈ Godmode",
         [
           `${target}`,
-          `Status \`${enabled ? "ENABLED" : "DISABLED"}\``,
+          `Status `${enabled ? "ENABLED" : "DISABLED"}``,
           enabled
             ? "Server mute protection is active."
             : "Server mute protection is disabled."
@@ -1709,7 +1709,7 @@ client.on("messageCreate", async message => {
       return reply(
         message,
         "✓ Timeout",
-        `${target} has been timed out for \`${args[1]}\`.`
+        `${target} has been timed out for `${args[1]}`.`
       );
     }
 
@@ -1900,7 +1900,7 @@ client.on("messageCreate", async message => {
       return reply(
         message,
         "✓ Unban All",
-        `Removed \`${count}\` bans.`
+        `Removed `${count}` bans.`
       );
     }
 
